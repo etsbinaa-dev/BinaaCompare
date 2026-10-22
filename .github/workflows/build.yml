@@ -1,0 +1,52 @@
+name: BinaaCompare (Windows)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write  # publish BinaaCompare-Windows.zip as a release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install . pytest "pyinstaller>=6,<7"
+      - name: Tests
+        run: python -m pytest -p no:cacheprovider -q
+      - name: Build BinaaCompare.exe
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx `
+            --distpath dist --workpath build\pyinstaller --specpath build\spec `
+            --exclude-module pytest --exclude-module setuptools --exclude-module pip `
+            --name BinaaCompare packaging\windows\compare_entry.py
+          if ($LASTEXITCODE) { throw "PyInstaller failed" }
+          $stage = "dist\BinaaCompare-Windows"
+          New-Item -ItemType Directory $stage | Out-Null
+          Copy-Item dist\BinaaCompare.exe $stage
+          Copy-Item packaging\windows\BinaaCompare-README.txt (Join-Path $stage "README.txt")
+          Compress-Archive -Path "$stage\*" -DestinationPath dist\BinaaCompare-Windows.zip
+      - name: Start check (the window opens, then closes)
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\BinaaCompare.exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($p.HasExited) { throw "BinaaCompare.exe exited at start (code $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+      - name: Publish BinaaCompare-Windows.zip
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $short = "${{ github.sha }}".Substring(0, 7)
+          gh release create "build-${{ github.run_number }}-$short" dist\BinaaCompare-Windows.zip `
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" `
+            --title "BinaaCompare $short" --notes "BinaaCompare (Windows) @ ${{ github.sha }}."
+          if ($LASTEXITCODE) { throw "release failed" }
