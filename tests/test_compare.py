@@ -76,14 +76,14 @@ def test_possible_pairs_are_a_separate_list_close_amounts_another():
     )
     assert keys(r.possible) == [
         (("A4", "A5"), (), "REVERSAL"),
-        (("A1",), ("B1",), "SAME"),
         (("A3",), ("B3", "B4"), "SUM"),
+        (("A1",), ("B1",), "SAME"),
     ]
     assert keys(r.close) == [(("A2",), ("B2",), "CLOSE")]
     assert r.close[0].difference == -15_000
     # alone: nothing on the other side could be it
     assert [x.key for x in r.only[0]] == ["A6"] and [x.key for x in r.only[1]] == ["B5"]
-    assert reason(r.possible[1], NAMES) == "نفس المبلغ — فرق 7 يوم في التاريخ"
+    assert reason(r.possible[2], NAMES) == "نفس المبلغ — فرق 7 يوم في التاريخ"
     assert reason(r.close[0], NAMES) == "فرق في المبلغ: 150"
 
 
@@ -218,3 +218,23 @@ def test_manual_export_drops_matched_rows_and_keeps_the_original_columns():
     assert rows[2][8] is None and rows[2][1] == "OD-2"  # the 2nd row, unchanged
     assert wb["binaa"]["A2"].fill.fgColor.rgb.endswith("F8CBAD")
     assert [r[0] for r in wb["clinique"].iter_rows(values_only=True)] == ["N°"]
+
+
+def test_five_transfers_of_one_day_making_one_entry_of_the_other_file():
+    """Bankily transfers recorded one by one on one side, as one total (a day
+    later) on the other; an unrelated line of that day stays alone."""
+    parts = [
+        line(f"B{i}", 5, C, amount) for i, amount in enumerate((1_200, 3_500, 800, 2_000, 4_500), 1)
+    ]
+    r = run([line("A1", 6, D, 12_000)], [*parts, line("B6", 5, C, 950)])
+    assert keys(r.possible) == [(("A1",), ("B1", "B2", "B3", "B4", "B5"), "SUM")]
+    assert reason(r.possible[0], NAMES) == "مجموع 5 عمليات من يوم واحد يساوي عملية واحدة"
+    assert [x.key for x in r.only[1]] == ["B6"]
+
+
+def test_a_sum_needs_lines_of_one_day_and_never_stalls_on_a_busy_day():
+    split = [line("B1", 5, C, 5_000), line("B2", 6, C, 7_000)]  # two different days
+    assert keys(run([line("A1", 6, D, 12_000)], split).possible) == []
+    busy = [line(f"B{i}", 5, C, 1_000 + i) for i in range(1, 200)]
+    r = run([line("A1", 5, D, 7)], busy)  # nothing can make 7: answered at once
+    assert r.possible == []

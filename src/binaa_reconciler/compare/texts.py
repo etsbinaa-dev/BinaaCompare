@@ -57,7 +57,9 @@ def reason(pair: Pair, names: tuple[str, str]) -> str:
         side = SIDE_AR[pair.a[0].side]
         return f"نفس المبلغ لكن {side} في الطرفين — تحقق من جهة القيد"
     if pair.kind is Kind.SUM:
-        return "مجموع عمليتين في نفس اليوم يساوي عملية واحدة"
+        n = max(len(pair.a), len(pair.b))
+        count = "عمليتين" if n == 2 else f"{n} عمليات"
+        return f"مجموع {count} من يوم واحد يساوي عملية واحدة"
     return f"فرق في المبلغ: {amount_text(abs(pair.difference))}"
 
 

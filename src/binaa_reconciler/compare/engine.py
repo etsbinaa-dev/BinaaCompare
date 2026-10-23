@@ -29,6 +29,10 @@ from binaa_reconciler.core.models import LedgerSide, Transaction
 MATCH_DAYS = 3
 SAME_AMOUNT_DAYS = 15
 NEAR_DAYS = 7
+SUM_DAYS = 2  # the single line may be recorded up to 2 days after/before
+MAX_SUM_PARTS = 8  # at most 8 lines of one day make one line of the other file
+MAX_SUM_LINES = 40  # lines of one day tried
+MAX_SUM_STATES = 50_000
 CLOSE_PERCENT = 2
 
 DEBIT, CREDIT = LedgerSide.DEBIT, LedgerSide.CREDIT
@@ -180,6 +184,31 @@ def _key(*lines: Line) -> str:
     return "|".join(sorted(x.key for x in lines))
 
 
+def _sum_of(
+    parts: Sequence[Line], target: Line, ok: Callable[..., bool]
+) -> tuple[Line, ...] | None:
+    """2 to MAX_SUM_PARTS lines of one day whose amounts make `target` exactly
+    (the nearest day first), or None. Bounded: a busy day never stalls."""
+    by_day: dict[date, list[Line]] = {}
+    for x in parts:
+        by_day.setdefault(x.day, []).append(x)
+    for day in sorted(by_day, key=lambda d: (abs((d - target.day).days), d)):
+        lines = sorted(by_day[day], key=lambda x: (-x.amount, x.key))[:MAX_SUM_LINES]
+        reach: dict[int, tuple[Line, ...]] = {0: ()}
+        for x in lines:
+            for total, combo in list(reach.items()):
+                new = total + x.amount
+                if new > target.amount or len(combo) >= MAX_SUM_PARTS or new in reach:
+                    continue
+                reach[new] = (*combo, x)
+                if len(reach) > MAX_SUM_STATES:
+                    break
+        combo = reach.get(target.amount, ())
+        if len(combo) >= 2 and ok(*combo, target):
+            return tuple(sorted(combo, key=lambda x: (x.day, x.key)))
+    return None
+
+
 def _possible(
     a: Sequence[Line], b: Sequence[Line], refused: set[str], used: set[str]
 ) -> list[Pair]:
@@ -207,6 +236,28 @@ def _possible(
             used,
         ):
             out.append(Pair(Kind.REVERSAL, (x, y) if first else (), () if first else (x, y)))
+    for first in (True, False):  # several lines of one day making one line
+        targets, parts_pool = (free(b), free(a)) if first else (free(a), free(b))
+        for t in sorted(targets, key=lambda x: (x.day, x.amount, x.key)):
+            if t.key in used:
+                continue
+            found = _sum_of(
+                [
+                    x
+                    for x in parts_pool
+                    if x.key not in used
+                    and _gap(x, t) <= SUM_DAYS
+                    and x.side is mirror(t.side)
+                    and x.amount < t.amount
+                ],
+                t,
+                ok,
+            )
+            if found is None:
+                continue
+            used.update(x.key for x in (*found, t))
+            pair = Pair(Kind.SUM, found, (t,)) if first else Pair(Kind.SUM, (t,), found)
+            out.append(pair)
     for x, y in _pair(  # the same amount, mirrored sides, up to 15 days apart
         free(a),
         free(b),
@@ -230,36 +281,6 @@ def _possible(
         used,
     ):
         out.append(Pair(Kind.SIDE, (x,), (y,)))
-    for first in (True, False):  # two lines of one day making one line
-        targets, parts_pool = (free(b), free(a)) if first else (free(a), free(b))
-        for t in sorted(targets, key=lambda x: (x.day, x.amount, x.key)):
-            if t.key in used:
-                continue
-            parts = sorted(
-                (
-                    x
-                    for x in parts_pool
-                    if x.key not in used
-                    and x.day == t.day
-                    and x.side is mirror(t.side)
-                    and x.amount < t.amount
-                ),
-                key=lambda x: (x.amount, x.key),
-            )
-            found = next(
-                (
-                    (p, q)
-                    for k, p in enumerate(parts)
-                    for q in parts[k + 1 :]
-                    if p.amount + q.amount == t.amount and ok(p, q, t)
-                ),
-                None,
-            )
-            if found is None:
-                continue
-            used.update((found[0].key, found[1].key, t.key))
-            pair = Pair(Kind.SUM, found, (t,)) if first else Pair(Kind.SUM, (t,), found)
-            out.append(pair)
     for x, y in _pair(  # a close amount, mirrored sides, up to 7 days apart
         free(a),
         free(b),
