@@ -216,6 +216,11 @@ def test_manual_export_drops_matched_rows_and_keeps_the_original_columns():
     assert rows[1][8] == "عند binaa وليس عند clinique"
     assert rows[3][8].startswith("عند binaa وليس عند clinique — بعد آخر عملية في ملف clinique")
     assert rows[2][8] is None and rows[2][1] == "OD-2"  # the 2nd row, unchanged
+    assert rows[0][9] == "التصحيح المقترح"
+    assert rows[1][9] == (
+        "إن كانت صحيحة: يسجلها clinique مدين 1,870 بتاريخ 14/09/2026 — وإن كانت خطأ: يلغيها binaa"
+    )
+    assert rows[2][9] is None
     assert wb["binaa"]["A2"].fill.fgColor.rgb.endswith("F8CBAD")
     assert [r[0] for r in wb["clinique"].iter_rows(values_only=True)] == ["N°"]
 
@@ -238,3 +243,22 @@ def test_a_sum_needs_lines_of_one_day_and_never_stalls_on_a_busy_day():
     busy = [line(f"B{i}", 5, C, 1_000 + i) for i in range(1, 200)]
     r = run([line("A1", 5, D, 7)], busy)  # nothing can make 7: answered at once
     assert r.possible == []
+
+
+def test_suggested_corrections_say_who_writes_what():
+    r = run(
+        [
+            line("A1", 4, D, 3_000),
+            line("A2", 3, D, 10_000),
+            line("A4", 6, D, 700),
+            line("A5", 7, C, 700),
+        ],
+        [line("B1", 4, C, 1_200), line("B2", 4, C, 1_800), line("B3", 3, C, 10_150)],
+    )
+    fa = manual.fixes(r, 0)
+    assert fa[1].startswith("لا تصحيح: المجموع")
+    assert fa[2] == (
+        "اتفقوا على المبلغ الصحيح: إن كان 10,150 يعدّل binaa قيده إلى 10,150 — "
+        "وإن كان 10,000 يعدّل clinique قيده إلى 10,000"
+    )
+    assert fa[4] == fa[5] == "لا تصحيح: الحركة وعكسها أثرهما صفر"
