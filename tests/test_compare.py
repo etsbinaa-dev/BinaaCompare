@@ -268,3 +268,37 @@ def test_the_same_amount_alone_on_both_sides_is_pointed_out():
     r = run([line("A1", 2, D, 4_000)], [line("B1", 25, C, 4_000)])  # 23 days apart
     assert r.notes["A1"] == "⚠️ نفس المبلغ عند clinique بتاريخ 25/09/2026"
     assert r.notes["B1"] == "⚠️ نفس المبلغ عند binaa بتاريخ 02/09/2026"
+
+
+def _xlsx4(rows) -> bytes:
+    """The short RIM-Soft layout: Date, Libellé, Débit, Crédit only."""
+    wb = Workbook()
+    ws = wb.create_sheet("Feuil1", 0)
+    ws.append(["Date", "Libellé", "Débit", "Crédit"])
+    for row in rows:
+        ws.append(list(row))
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_split_rows_are_rejoined_in_the_short_layout_too():
+    before = [(date(2026, 9, 13), "SYN avant", 500, 0)]
+    after = [(date(2026, 9, 15), "SYN apres", 0, 900)]
+    for second in (
+        (None, 1870, 0),  # the cut-off cells, from the 2nd column
+        (1870, 0),  # the cut-off cells, from the 1st column
+        ("suite", 1870, 0),  # the end of the label, then the cells
+    ):
+        loaded = load(_xlsx4([*before, (date(2026, 9, 14), "SYN BIM"), second, *after]), "B")
+        assert [x.amount for x in loaded.lines] == [50_000, 187_000, 90_000], second
+        assert loaded.merged == 1 and loaded.problems == (), second
+
+
+def test_a_row_without_amount_before_a_real_operation_is_not_merged():
+    loaded = load(
+        _xlsx4([(date(2026, 9, 14), "SYN sans montant"), (date(2026, 9, 15), "SYN ok", 0, 900)]),
+        "B",
+    )
+    assert [x.amount for x in loaded.lines] == [90_000] and loaded.merged == 0
+    assert len(loaded.problems) == 1

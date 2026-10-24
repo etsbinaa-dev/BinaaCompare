@@ -390,15 +390,18 @@ def _import_rows(
             continue
         filled = [k for k, c in enumerate(first) if not is_blank(c)]
         rest = [k for k, c in enumerate(second) if not is_blank(c)]
-        if not filled or not rest or not is_blank(_cell(second, 0)):
+        if not filled or not rest or classify(second).row_class is RowClass.TRANSACTION:
+            continue  # the next row is an operation of its own
+        if (n, filled[-1] + 1) in unreliable:
             continue
-        merged = tuple(first[: filled[-1] + 1]) + tuple(second[rest[0] :])
-        if (n, filled[-1] + 1) in unreliable or classify(merged).row_class is not (
-            RowClass.TRANSACTION
-        ):
-            continue
-        rows[i] = merged
-        continuation.add(n + 1)
+        # the cut-off cells follow the label; the 2nd row may begin with the end
+        # of the label (skipped) — in any layout (N°/Compte/Pièce or not)
+        for start in (rest[0], rest[0] + 1):
+            merged = tuple(first[: filled[-1] + 1]) + tuple(second[start:])
+            if classify(merged).row_class is RowClass.TRANSACTION:
+                rows[i] = merged
+                continuation.add(n + 1)
+                break
 
     # -- classify every row -------------------------------------------------------
     pending: list[tuple[int, Row, date, LedgerSide, int]] = []
