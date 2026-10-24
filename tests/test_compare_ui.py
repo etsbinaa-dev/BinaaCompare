@@ -104,9 +104,9 @@ def test_two_files_one_button_two_lists(files, tmp_path):
         app.update()
         assert app.trees[0].get_children() == ()
         assert "غير معروضة لأنها خارج الفترة المختارة: 1 عملية عند binaa" in app.note_var.get()
-        target = app.export()
+        target = app.export_manual()
         assert target is not None and target.exists()
-        assert "المتطابقة" in load_workbook(io.BytesIO(target.read_bytes())).sheetnames
+        assert load_workbook(io.BytesIO(target.read_bytes())).sheetnames == ["binaa", "clinique"]
         assert app.dialogs.calls[-1] == ("open", "out.xlsx")  # opened after saving
     finally:
         app.destroy()

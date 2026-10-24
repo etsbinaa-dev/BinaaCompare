@@ -15,7 +15,7 @@ from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from binaa_reconciler.compare import excel, manual
+from binaa_reconciler.compare import manual
 from binaa_reconciler.compare.engine import (
     SIDE_AR,
     Pair,
@@ -173,12 +173,8 @@ class CompareApp(tk.Tk):
         )
         label(actions, "إلى:").pack(side="right", padx=(8, 4))
         ttk.Entry(actions, textvariable=self.to_var, width=11, justify="center").pack(side="right")
-        self.export_button = ttk.Button(actions, text="تصدير Excel", command=self.export)
-        self.export_button.pack(side="left")
-        self.manual_button = ttk.Button(
-            actions, text="تصدير للمقارنة اليدوية", command=self.export_manual
-        )
-        self.manual_button.pack(side="left", padx=(0, 6))
+        self.manual_button = ttk.Button(actions, text="تصدير Excel", command=self.export_manual)
+        self.manual_button.pack(side="left")
 
         self.headline_var = tk.StringVar()
         self.note_var = tk.StringVar()
@@ -309,7 +305,6 @@ class CompareApp(tk.Tk):
     def refresh_buttons(self) -> None:
         ready = self.box_a.loaded is not None and self.box_b.loaded is not None
         self.compare_button.state(["!disabled"] if ready else ["disabled"])
-        self.export_button.state(["!disabled"] if self.result is not None else ["disabled"])
         self.manual_button.state(["!disabled"] if self.result is not None else ["disabled"])
         for button in self.undo_buttons:
             button.state(["!disabled"] if self.history else ["disabled"])
@@ -414,21 +409,6 @@ class CompareApp(tk.Tk):
                 )
                 tree.insert("", "end", iid=x.key, values=values[::-1])
             self.totals[i].set(total_text(result, i))
-
-    def export(self) -> Path | None:
-        if self.result is None:
-            return None
-        a, b = self.result.names
-        target = self.dialogs.ask_save(f"مقارنة {a} {b}.xlsx")
-        if target is None:
-            return None
-        try:
-            excel.save(self.result, target)
-        except OSError:
-            self.dialogs.error("تعذّر الحفظ", "أغلق الملف إن كان مفتوحًا في Excel ثم أعد المحاولة")
-            return None
-        self.dialogs.open_file(target)
-        return target
 
     def export_manual(self) -> Path | None:
         """The two original files without the matched operations, with a status
