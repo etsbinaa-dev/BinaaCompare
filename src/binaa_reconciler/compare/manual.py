@@ -66,7 +66,7 @@ def statuses(result: Result, i: int) -> tuple[set[int], dict[int, tuple[str, Pat
     for pair in result.close:
         for x in pair.lines:
             if x.key[0] == "AB"[i]:
-                text = f"{reason(pair, result.names)} — المقابل عند {other}: {_other(pair, x)}"
+                text = f"المقابل عند {other}: {_other(pair, x)}"  # yellow: a gap
                 status[x.row] = (text, YELLOW)
     for x in result.only[i]:
         note = result.notes.get(x.key)
