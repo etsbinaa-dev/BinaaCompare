@@ -38,7 +38,7 @@ WRAP = Alignment(wrap_text=True, vertical="top", horizontal="right", readingOrde
 RLM = "\u200f"  # keeps Latin names and numbers in place inside Arabic text
 
 
-ARABIC_NAMES = {"binaa": "بناء", "clinique": "كلينيك", "clinic": "كلينيك", "cliniq": "كلينيك"}
+ARABIC_NAMES = {"binaa": "بناء", "clinique": "كلينك", "clinic": "كلينك", "cliniq": "كلينك"}
 
 
 def arabic(name: str) -> str:
@@ -96,7 +96,7 @@ def statuses(result: Result, i: int) -> tuple[set[int], dict[int, tuple[str, Pat
                 status[x.row] = (text, YELLOW)
     for x in result.only[i]:
         note = result.notes.get(x.key)
-        text = f"غير موجودة عند {other}" + (f" — {note}" if note else "")
+        text = f"عند {result.names[i]} فقط" + (f" — {note}" if note else "")
         status[x.row] = (text, RED)
     status = {row: (_arabic_text(t, result.names), f) for row, (t, f) in status.items()}
     return matched, status

@@ -209,18 +209,18 @@ def test_manual_export_drops_matched_rows_and_keeps_the_original_columns():
     b = load(_xlsx([(1, date(2026, 9, 14), 411, "SYN recu", "X-1", 0, 5000, 0)]), "B")
     result = compare(a.lines, b.lines, ("binaa", "clinique"), (d(1), d(30)))
     wb = load_workbook(io.BytesIO(manual.build(result, a, b)))
-    assert wb.sheetnames == ["بناء", "كلينيك"]  # Arabic names: no broken sentence
+    assert wb.sheetnames == ["بناء", "كلينك"]  # Arabic names: no broken sentence
     rows = [tuple(r) for r in wb["بناء"].iter_rows(values_only=True)]
     assert rows[0][:3] == ("N°", "Date", "Compte") and rows[0][8] == "الحالة"
     assert [r[0] for r in rows[1:]] == [2, None, 3]  # row 1 (matched) is gone
     plain = [str(r[8]).replace("\u200f", "") for r in rows]
-    assert plain[1] == "غير موجودة عند كلينيك"
-    assert plain[3].startswith("غير موجودة عند كلينيك\nبعد آخر عملية في ملف كلينيك")
+    assert plain[1] == "عند بناء فقط"
+    assert plain[3].startswith("عند بناء فقط\nبعد آخر عملية في ملف كلينك")
     assert rows[2][8] is None and rows[2][1] == "OD-2"  # the 2nd row, unchanged
     assert len(rows[0]) == 9  # no suggested-correction column
     assert rows[3][5:7] == (None, 777)  # the empty side (0 in RIM-Soft) stays empty
     assert wb["بناء"]["A2"].fill.fgColor.rgb.endswith("F8CBAD")
-    assert [r[0] for r in wb["كلينيك"].iter_rows(values_only=True)] == ["N°"]
+    assert [r[0] for r in wb["كلينك"].iter_rows(values_only=True)] == ["N°"]
 
 
 def test_five_transfers_of_one_day_making_one_entry_of_the_other_file():
