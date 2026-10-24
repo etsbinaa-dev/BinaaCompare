@@ -216,7 +216,8 @@ class CompareApp(tk.Tk):
                 foreground=GREY,
             ).pack(side="right", padx=8)
             self._details(frame, tree)
-            if kind == "close":
+            if kind == "close":  # the reason is always "a different amount": not shown
+                tree.configure(displaycolumns=[f"c{k}" for k in range(6, -1, -1)])
                 label(frame, textvariable=self.close_total, font=BIG).pack(fill="x")
             self.pair_trees[kind] = tree
             self.pair_frames[kind] = frame
