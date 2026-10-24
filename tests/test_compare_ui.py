@@ -151,3 +151,41 @@ def test_decisions_survive_closing_the_window(files, tmp_path):
                 assert len(possible.get_children()) == 1
         finally:
             app.destroy()
+
+
+def test_a_click_on_a_column_title_sorts_the_list(tmp_path):
+    rows = [
+        (1, date(2026, 9, 3), 900, "SYN b", "T1", 500, 0, 0),
+        (2, date(2026, 9, 1), 900, "SYN a", "T2", 7_000, 0, 0),
+        (3, date(2026, 9, 2), 900, "SYN c", "T3", 0, 1_200, 0),
+    ]
+    a = xlsx(tmp_path / "a.xlsx", rows)
+    b = xlsx(tmp_path / "b.xlsx", [(1, date(2026, 9, 1), 900, "SYN z", "X", 0, 3, 0)])
+    try:
+        app = CompareApp(FakeDialogs([a, b], tmp_path / "out.xlsx"))
+    except Exception as exc:  # no display
+        pytest.skip(f"Tk cannot open a window here: {type(exc).__name__}")
+    try:
+        app.box_a.choose()
+        app.box_b.choose()
+        app.from_var.set("01/09/2026")
+        app.to_var.set("30/09/2026")
+        app.compare_button.invoke()
+        tree = app.trees[0]
+
+        def column(k):
+            return [tree.set(i, f"c{k}") for i in tree.get_children()]
+
+        app.sort(tree, "c1")  # amount: largest first
+        assert column(1) == ["7,000", "1,200", "500"]
+        assert str(tree.heading("c1", "text")).endswith("▼")
+        app.sort(tree, "c1")  # again: the other way
+        assert column(1) == ["500", "1,200", "7,000"]
+        app.sort(tree, "c0")  # date: oldest first
+        assert column(0) == ["01/09/2026", "02/09/2026", "03/09/2026"]
+        app.sort(tree, "c2")  # side: alphabetical
+        assert column(2) == sorted(column(2))
+        app.compare_button.invoke()  # compared again: the chosen order stays
+        assert column(2) == sorted(column(2))
+    finally:
+        app.destroy()

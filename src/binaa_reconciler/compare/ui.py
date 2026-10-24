@@ -189,6 +189,7 @@ class CompareApp(tk.Tk):
         self.tabs.pack(fill="both", expand=True, pady=(6, 0))
         self.pair_trees: dict[str, ttk.Treeview] = {}
         self.pair_frames: dict[str, ttk.Frame] = {}
+        self.sorted_by: dict[str, tuple[str, bool]] = {}  # tree -> (column, descending)
         self.undo_buttons: list[ttk.Button] = []
         # ✓ / ✗ in order (the last is undone first), saved on this computer after
         # each one; read back the first time the two files are compared
@@ -269,8 +270,8 @@ class CompareApp(tk.Tk):
     def _double_click(self, kind: str, _event: object) -> None:
         self.decide(kind, True)
 
-    @staticmethod
     def _tree(
+        self,
         frame: ttk.Frame,
         columns: tuple[str, ...],
         widths: tuple[int, ...],
@@ -281,13 +282,42 @@ class CompareApp(tk.Tk):
         ids = [f"c{k}" for k in range(len(columns))]
         tree = ttk.Treeview(holder, columns=ids[::-1], show="headings", height=6)
         for k, (heading, width) in enumerate(zip(columns, widths, strict=True)):
-            tree.heading(f"c{k}", text=heading, anchor="e")
+            tree.heading(
+                f"c{k}", text=heading, anchor="e", command=partial(self.sort, tree, f"c{k}")
+            )
             tree.column(f"c{k}", width=width, anchor="e", stretch=k in stretch)
         bar = ttk.Scrollbar(holder, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=bar.set)
         bar.pack(side="left", fill="y")
         tree.pack(side="right", fill="both", expand=True)
         return tree
+
+    def sort(self, tree: ttk.Treeview, column: str, again: bool = False) -> None:
+        """A click on a column title sorts by it; a second click, the other way.
+        Dates by date, amounts by value, the rest alphabetically."""
+        last = self.sorted_by.get(str(tree))
+        if again:
+            if last is None:
+                return
+            column, descending = last
+        else:
+            descending = last == (column, False) if last else False
+            if last is None or last[0] != column:
+                descending = self._numeric(tree, column)  # amounts: largest first
+        self.sorted_by[str(tree)] = (column, descending)
+        items = list(tree.get_children())
+        items.sort(key=lambda i: _sort_key(tree.set(i, column)), reverse=descending)
+        for n, item in enumerate(items):
+            tree.move(item, "", n)
+        arrow = " ▼" if descending else " ▲"
+        for c in tree["columns"]:
+            text = str(tree.heading(c, "text")).removesuffix(" ▲").removesuffix(" ▼")
+            tree.heading(c, text=text + (arrow if c == column else ""))
+
+    @staticmethod
+    def _numeric(tree: ttk.Treeview, column: str) -> bool:
+        first = next(iter(tree.get_children()), None)
+        return first is not None and _sort_key(tree.set(first, column))[0] == 1
 
     def _fit(self, width: int, height: int) -> None:
         """Never larger than the screen: on Windows the window opens maximized
@@ -421,6 +451,8 @@ class CompareApp(tk.Tk):
                 )
                 tree.insert("", "end", iid=x.key, values=values[::-1])
             self.totals[i].set(total_text(result, i))
+        for tree in (*self.pair_trees.values(), *self.trees):
+            self.sort(tree, "", again=True)  # keep the order the user chose
 
     def export_manual(self) -> Path | None:
         """The two original files without the matched operations, with a status
@@ -438,6 +470,18 @@ class CompareApp(tk.Tk):
             return None
         self.dialogs.open_file(target)
         return target
+
+
+def _sort_key(text: str) -> tuple[int, object]:
+    """(0, date) / (1, amount) / (2, text): dates, then amounts, then words."""
+    text = text.strip()
+    if parsed := _date(text[:10]):
+        return 0, parsed
+    digits = text.replace(",", "").replace(" ", "")
+    parts = digits.split("+")
+    if parts and all(p.isdigit() for p in parts):
+        return 1, sum(int(p) for p in parts)
+    return 2, text.casefold()
 
 
 def _date(text: str) -> date | None:
