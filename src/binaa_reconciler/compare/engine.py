@@ -353,16 +353,25 @@ def compare(
         sum(not inside(x.day) for x in left),
         sum(not inside(x.day) for x in right),
     )
+    for i, lines in enumerate(result.only):  # the same amount alone on the other side
+        others = _by_amount(result.only[1 - i])
+        for x in lines:
+            if same := others.get(x.amount):
+                days = "، ".join(f"{y.day:%d/%m/%Y}" for y in same[:3])
+                result.notes[x.key] = f"⚠️ نفس المبلغ عند {names[1 - i]} فقط بتاريخ {days}"
     for i, lines in enumerate(result.only):
         other = b if i == 0 else a
         if not other:
             continue
         first, last = min(x.day for x in other), max(x.day for x in other)
         for x in lines:
+            edge = ""
             if x.day < first:
-                result.notes[x.key] = f"قبل أول عملية في ملف {names[1 - i]} ({first:%d/%m/%Y})"
+                edge = f"قبل أول عملية في ملف {names[1 - i]} ({first:%d/%m/%Y})"
             elif x.day > last:
-                result.notes[x.key] = f"بعد آخر عملية في ملف {names[1 - i]} ({last:%d/%m/%Y})"
+                edge = f"بعد آخر عملية في ملف {names[1 - i]} ({last:%d/%m/%Y})"
+            if edge:
+                result.notes[x.key] = " — ".join(filter(None, (edge, result.notes.get(x.key))))
     return result
 
 

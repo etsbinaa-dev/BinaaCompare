@@ -274,3 +274,18 @@ def test_saved_decisions_follow_the_lines_not_the_excel_rows():
     assert ok and [x.key for x in again.b] == ["B13", "B14"]
     assert memory.load(NAMES, a, moved[:1]) == []  # a line is gone: dropped
     assert memory.load(("x", "y"), a, moved) == []  # other parties: their own
+
+
+def test_manual_export_writes_dates_even_when_the_file_has_serial_numbers():
+    a = load(_xlsx([(1, 46279, 900, "SYN serial", "OD-1", 0, 777, 0)]), "A")  # 14/09/2026
+    b = load(_xlsx([(1, date(2026, 9, 20), 411, "SYN autre", "X-1", 0, 5, 0)]), "B")
+    result = compare(a.lines, b.lines, ("binaa", "clinique"), (d(1), d(30)))
+    ws = load_workbook(io.BytesIO(manual.build(result, a, b)))["binaa"]
+    assert ws["B2"].value.date() == date(2026, 9, 14) and ws["B2"].number_format == "DD/MM/YYYY"
+    assert ws["J2"].alignment.wrap_text  # the notes wrap: no sideways scrolling
+
+
+def test_the_same_amount_alone_on_both_sides_is_pointed_out():
+    r = run([line("A1", 2, D, 4_000)], [line("B1", 25, C, 4_000)])  # 23 days apart
+    assert r.notes["A1"] == "⚠️ نفس المبلغ عند clinique فقط بتاريخ 25/09/2026"
+    assert r.notes["B1"] == "⚠️ نفس المبلغ عند binaa فقط بتاريخ 02/09/2026"

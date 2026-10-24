@@ -10,12 +10,13 @@ never modified: only a new file is written, where the user chooses.
 from __future__ import annotations
 
 from copy import copy
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -35,6 +36,8 @@ RED = PatternFill("solid", fgColor="F8CBAD")
 ORANGE = PatternFill("solid", fgColor="FCE4D6")
 YELLOW = PatternFill("solid", fgColor="FFF2CC")
 GREY = PatternFill("solid", fgColor="E7E6E6")
+WRAP = Alignment(wrap_text=True, vertical="top", horizontal="right")
+DATE_FORMAT = "DD/MM/YYYY"
 _FORBIDDEN = str.maketrans(dict.fromkeys("[]:*?/\\", " "))
 
 
@@ -124,6 +127,7 @@ def _copy_sheet(target: Worksheet, loaded: Loaded, result: Result, i: int) -> No
     matched, status = statuses(result, i)
     fix = fixes(result, i)
     transaction_rows = {x.row for x in loaded.lines}
+    days = {x.row: x.day for x in loaded.lines}  # the dates as read (not serials)
     second_rows = {v: k for k, v in loaded.continuation.items()}  # 2nd row -> 1st
     width = source.max_column
     status_col = width + 1
@@ -139,21 +143,29 @@ def _copy_sheet(target: Worksheet, loaded: Loaded, result: Result, i: int) -> No
             if cell.has_style:
                 new.number_format = cell.number_format
                 new.font = copy(cell.font)
+            if isinstance(value, datetime | date):
+                new.number_format = DATE_FORMAT
+        if n in days and loaded.date_col is not None:  # never a bare number
+            target.cell(out, loaded.date_col + 1, days[n]).number_format = DATE_FORMAT
         if n == loaded.header_row:
             for col, title in ((status_col, "الحالة"), (status_col + 1, "التصحيح المقترح")):
                 target.cell(out, col, title).font = Font(bold=True)
         elif n > loaded.header_row:
             text, fill = status.get(first, ("خارج الفترة المختارة", GREY))
             if n == first:
-                target.cell(out, status_col, text)
-                target.cell(out, status_col + 1, fix.get(first, "يُراجع في الفترة التالية"))
+                for col, note in (
+                    (status_col, text),
+                    (status_col + 1, fix.get(first, "يُراجع في الفترة التالية")),
+                ):
+                    target.cell(out, col, note).alignment = WRAP
             for col in range(1, status_col + 2):
                 target.cell(out, col).fill = fill
     for col in range(1, width + 1):
         letter = get_column_letter(col)
         target.column_dimensions[letter].width = source.column_dimensions[letter].width or 14
-    target.column_dimensions[get_column_letter(status_col)].width = 60
-    target.column_dimensions[get_column_letter(status_col + 1)].width = 90
+    # narrow note columns, the text wraps: the page fits the screen
+    target.column_dimensions[get_column_letter(status_col)].width = 34
+    target.column_dimensions[get_column_letter(status_col + 1)].width = 44
     target.freeze_panes = f"A{loaded.header_row + 1}"
 
 

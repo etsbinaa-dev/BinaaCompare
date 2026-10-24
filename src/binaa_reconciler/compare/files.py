@@ -7,6 +7,7 @@ from pathlib import Path
 
 from binaa_reconciler.app.texts import ISSUES_AR
 from binaa_reconciler.compare.engine import Line
+from binaa_reconciler.core.ledger_columns import ColumnRole
 from binaa_reconciler.core.models import Severity
 from binaa_reconciler.importers.rimsoft_xlsx import import_rimsoft_xlsx
 
@@ -22,6 +23,7 @@ class Loaded:
     sheet_index: int = 0
     header_row: int = 1
     continuation: dict[int, int] = field(default_factory=dict)  # row -> its 2nd row
+    date_col: int | None = None  # 0-based column of the dates
 
 
 def load(path: Path | bytes, prefix: str) -> Loaded:
@@ -52,6 +54,7 @@ def load(path: Path | bytes, prefix: str) -> Loaded:
         data=data,
         sheet_index=report.sheet_index or 0,
         header_row=report.header_row or 1,
+        date_col=report.columns.get(ColumnRole.DATE),
         continuation=continuation,
     )
 
