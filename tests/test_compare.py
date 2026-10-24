@@ -218,6 +218,7 @@ def test_manual_export_drops_matched_rows_and_keeps_the_original_columns():
     assert plain[3].startswith("غير موجودة عند clinique\nبعد آخر عملية في ملف clinique")
     assert rows[2][8] is None and rows[2][1] == "OD-2"  # the 2nd row, unchanged
     assert len(rows[0]) == 9  # no suggested-correction column
+    assert rows[3][5:7] == (None, 777)  # the empty side (0 in RIM-Soft) stays empty
     assert wb["binaa"]["A2"].fill.fgColor.rgb.endswith("F8CBAD")
     assert [r[0] for r in wb["clinique"].iter_rows(values_only=True)] == ["N°"]
 

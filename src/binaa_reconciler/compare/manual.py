@@ -111,6 +111,12 @@ def _copy_sheet(target: Worksheet, loaded: Loaded, result: Result, i: int) -> No
                 new.number_format = DATE_FORMAT
         if n in days and loaded.date_col is not None:  # never a bare number
             target.cell(out, loaded.date_col + 1, days[n]).number_format = DATE_FORMAT
+        if n > loaded.header_row:  # amounts: 1,216,000; the empty side stays empty
+            for col in loaded.amount_cols:
+                cell = target.cell(out, col + 1)
+                if isinstance(cell.value, int | float):
+                    cell.value = cell.value or None
+                    cell.number_format = "#,##0"
         if n == loaded.header_row:
             target.cell(out, status_col, "الحالة").font = Font(bold=True)
         elif n > loaded.header_row:

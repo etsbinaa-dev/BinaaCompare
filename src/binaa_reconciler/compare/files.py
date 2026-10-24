@@ -24,6 +24,7 @@ class Loaded:
     header_row: int = 1
     continuation: dict[int, int] = field(default_factory=dict)  # row -> its 2nd row
     date_col: int | None = None  # 0-based column of the dates
+    amount_cols: tuple[int, ...] = ()  # 0-based debit and credit columns
 
 
 def load(path: Path | bytes, prefix: str) -> Loaded:
@@ -55,6 +56,11 @@ def load(path: Path | bytes, prefix: str) -> Loaded:
         sheet_index=report.sheet_index or 0,
         header_row=report.header_row or 1,
         date_col=report.columns.get(ColumnRole.DATE),
+        amount_cols=tuple(
+            c
+            for role in (ColumnRole.DEBIT, ColumnRole.CREDIT)
+            if (c := report.columns.get(role)) is not None
+        ),
         continuation=continuation,
     )
 
