@@ -7,6 +7,7 @@ Everything happens on this one screen: choose the two RIM-Soft files, press
 from __future__ import annotations
 
 import contextlib
+import os
 import sys
 import tkinter as tk
 from datetime import date, datetime
@@ -63,6 +64,12 @@ class Dialogs:
 
     def info(self, title: str, text: str) -> None:
         messagebox.showinfo(title, text)
+
+    def open_file(self, path: Path) -> None:
+        """Open the saved workbook in Excel (Windows); elsewhere: nothing."""
+        if sys.platform.startswith("win"):
+            with contextlib.suppress(OSError):
+                os.startfile(path)  # type: ignore[attr-defined]  # noqa: S606
 
     def error(self, title: str, text: str) -> None:
         messagebox.showerror(title, text)
@@ -185,6 +192,9 @@ class CompareApp(tk.Tk):
         self.tabs.pack(fill="both", expand=True, pady=(6, 0))
         self.pair_trees: dict[str, ttk.Treeview] = {}
         self.pair_frames: dict[str, ttk.Frame] = {}
+        self.undo_buttons: list[ttk.Button] = []
+        self.history: list[tuple[bool, str]] = []  # (confirmed?, pair key), last last
+        self.close_total = tk.StringVar()
         for kind in ("possible", "close"):
             frame = ttk.Frame(self.tabs, padding=6)
             self.tabs.add(frame, text="")
@@ -201,11 +211,17 @@ class CompareApp(tk.Tk):
             ttk.Button(buttons, text="✗ ليست هي", command=partial(self.decide, kind, False)).pack(
                 side="right", padx=8
             )
+            undo = ttk.Button(buttons, text="↶ تراجع عن آخر قرار", command=self.undo)
+            undo.pack(side="left")
+            self.undo_buttons.append(undo)
             label(
                 buttons,
                 "اختر سطرًا ثم «مطابقة» (أو اضغط عليه مرتين) — يختفي وينتقل إلى المتطابقة",
                 foreground=GREY,
             ).pack(side="right", padx=8)
+            self._details(frame, tree)
+            if kind == "close":
+                label(frame, textvariable=self.close_total, font=BIG).pack(fill="x")
             self.pair_trees[kind] = tree
             self.pair_frames[kind] = frame
         self.frames: list[ttk.Frame] = []
@@ -215,6 +231,7 @@ class CompareApp(tk.Tk):
             frame = ttk.Frame(self.tabs, padding=6)
             self.tabs.add(frame, text="")
             tree = self._tree(frame, COLUMNS, WIDTHS, stretch=(3, 5))
+            self._details(frame, tree)
             total = tk.StringVar()
             label(frame, textvariable=total, foreground=GREY).pack(fill="x")
             self.frames.append(frame)
@@ -223,6 +240,30 @@ class CompareApp(tk.Tk):
         self.confirmed: dict[str, Pair] = {}
         self.rejected: set[str] = set()
         self.refresh_buttons()
+
+    @staticmethod
+    def _details(frame: ttk.Frame, tree: ttk.Treeview) -> None:
+        """The selected line in full under the list (descriptions are cut)."""
+        text = tk.StringVar()
+        label(frame, textvariable=text, wraplength=1100).pack(fill="x", pady=(4, 0))
+
+        def show(_event: object = None) -> None:
+            selected = tree.selection()
+            values = tree.item(selected[0], "values")[::-1] if selected else ()
+            text.set("  |  ".join(str(v) for v in values if str(v).strip()))
+
+        tree.bind("<<TreeviewSelect>>", show, add="+")
+
+    def undo(self) -> None:
+        """Take back the last ✓ / ✗ (the pair is proposed again)."""
+        if not self.history:
+            return
+        confirmed, key = self.history.pop()
+        if confirmed:
+            self.confirmed.pop(key, None)
+        else:
+            self.rejected.discard(key)
+        self.run()
 
     def _double_click(self, kind: str, _event: object) -> None:
         self.decide(kind, True)
@@ -270,6 +311,8 @@ class CompareApp(tk.Tk):
         self.compare_button.state(["!disabled"] if ready else ["disabled"])
         self.export_button.state(["!disabled"] if self.result is not None else ["disabled"])
         self.manual_button.state(["!disabled"] if self.result is not None else ["disabled"])
+        for button in self.undo_buttons:
+            button.state(["!disabled"] if self.history else ["disabled"])
 
     def run(self) -> None:
         a, b = self.box_a.loaded, self.box_b.loaded
@@ -278,6 +321,9 @@ class CompareApp(tk.Tk):
         start, end = _date(self.from_var.get()), _date(self.to_var.get())
         if start is None or end is None or start > end:
             self.dialogs.error("الفترة", "اكتب التاريخين بهذا الشكل: 01/09/2026")
+            return
+        if a.data == b.data:
+            self.dialogs.error("الملف نفسه", "اخترت الملف نفسه للطرفين — اختر ملف كل طرف")
             return
         self.sources = (a, b)  # the files this result was made from
         self.result = compare(
@@ -309,6 +355,7 @@ class CompareApp(tk.Tk):
             self.confirmed[pair.key] = pair
         else:
             self.rejected.add(pair.key)
+        self.history.append((accepted, pair.key))
         self.run()
 
     def show(self, result: Result) -> None:
@@ -318,15 +365,27 @@ class CompareApp(tk.Tk):
         notes = [title(result)]
         if extra := footnote(result):
             notes.append(extra)
+        counts = [len(box.loaded.lines) for box in (self.box_a, self.box_b) if box.loaded]
+        if len(counts) == 2 and max(counts) > 2 * min(counts):
+            big = self.box_a if counts[0] > counts[1] else self.box_b
+            notes.append(
+                f"⚠️ عدد العمليات مختلف كثيرًا ({counts[0]} مقابل {counts[1]}) — "
+                f"تأكد أن ملف {big.name} هو كشف الحساب بين الطرفين فقط ولنفس الفترة"
+            )
         for box in (self.box_a, self.box_b):
             if box.loaded is not None and box.loaded.problems:
                 rows = "، ".join(p.split(":")[0].replace("السطر ", "") for p in box.loaded.problems)
                 notes.append(f"⚠️ سطور لم تُقرأ في ملف {box.name}: {rows}")
         self.note_var.set("\n".join(notes))
         a, b = result.names
+        by_gap = sorted(result.close, key=lambda p: (abs(p.difference), p.day))
+        gaps = sum(abs(p.difference) for p in result.close)
+        self.close_total.set(
+            f"{len(result.close)} عملية — مجموع الفروق: {amount_text(gaps)}" if result.close else ""
+        )
         for kind, pairs, text in (
             ("possible", result.possible, "🔎 قد تكون نفس العملية"),
-            ("close", result.close, "💲 فرق في المبلغ"),
+            ("close", by_gap, "💲 فرق في المبلغ"),
         ):
             self.tabs.tab(self.pair_frames[kind], text=f"{text} ({len(pairs)})")  # type: ignore[no-untyped-call]
             tree = self.pair_trees[kind]
@@ -368,7 +427,7 @@ class CompareApp(tk.Tk):
         except OSError:
             self.dialogs.error("تعذّر الحفظ", "أغلق الملف إن كان مفتوحًا في Excel ثم أعد المحاولة")
             return None
-        self.dialogs.info("تم", f"تم حفظ الملف على هذا الجهاز:\n{target.name}")
+        self.dialogs.open_file(target)
         return target
 
     def export_manual(self) -> Path | None:
@@ -385,7 +444,7 @@ class CompareApp(tk.Tk):
         except OSError:
             self.dialogs.error("تعذّر الحفظ", "أغلق الملف إن كان مفتوحًا في Excel ثم أعد المحاولة")
             return None
-        self.dialogs.info("تم", f"تم حفظ الملف على هذا الجهاز:\n{target.name}")
+        self.dialogs.open_file(target)
         return target
 
 

@@ -39,6 +39,9 @@ class FakeDialogs:
     def error(self, title, text):
         self.calls.append(("error", title))
 
+    def open_file(self, path):
+        self.calls.append(("open", path.name))
+
 
 @pytest.fixture
 def files(tmp_path):
@@ -88,6 +91,13 @@ def test_two_files_one_button_two_lists(files, tmp_path):
         app.update()
         assert possible.get_children() == ()
         assert "✅ متطابقة: 2" in app.headline_var.get()
+        # ↶ undo: the pair is proposed again, then confirmed again
+        app.undo()
+        app.update()
+        assert possible.get_children() == (key,)
+        possible.selection_set(key)
+        app.decide("possible", True)
+        app.update()
         # a shorter period: the lines outside it are counted, not listed
         app.from_var.set("09/09/2026")
         app.compare_button.invoke()
@@ -97,5 +107,20 @@ def test_two_files_one_button_two_lists(files, tmp_path):
         target = app.export()
         assert target is not None and target.exists()
         assert "المتطابقة" in load_workbook(io.BytesIO(target.read_bytes())).sheetnames
+        assert app.dialogs.calls[-1] == ("open", "out.xlsx")  # opened after saving
+    finally:
+        app.destroy()
+
+
+def test_the_same_file_twice_is_refused(files, tmp_path):
+    try:
+        app = CompareApp(FakeDialogs([files[0], files[0]], tmp_path / "out.xlsx"))
+    except Exception as exc:  # no display
+        pytest.skip(f"Tk cannot open a window here: {type(exc).__name__}")
+    try:
+        app.box_a.choose()
+        app.box_b.choose()
+        app.compare_button.invoke()
+        assert app.result is None and app.dialogs.calls == [("error", "الملف نفسه")]
     finally:
         app.destroy()
