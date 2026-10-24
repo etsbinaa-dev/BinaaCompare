@@ -7,7 +7,7 @@ from datetime import date, timedelta
 
 from openpyxl import Workbook, load_workbook
 
-from binaa_reconciler.compare import manual
+from binaa_reconciler.compare import manual, memory
 from binaa_reconciler.compare.engine import Line, amount_text, compare
 from binaa_reconciler.compare.excel import build
 from binaa_reconciler.compare.files import load
@@ -262,3 +262,15 @@ def test_suggested_corrections_say_who_writes_what():
         "وإن كان 10,000 يعدّل clinique قيده إلى 10,000"
     )
     assert fa[4] == fa[5] == "لا تصحيح: الحركة وعكسها أثرهما صفر"
+
+
+def test_saved_decisions_follow_the_lines_not_the_excel_rows():
+    a = [line("A3", 4, D, 3_000)]
+    b = [line("B3", 4, C, 1_200), line("B4", 4, C, 1_800), line("B5", 9, C, 77)]
+    (pair,) = run(a, b).possible
+    memory.save(NAMES, [(True, pair)])
+    moved = [line("B13", 4, C, 1_200), line("B14", 4, C, 1_800)]  # exported again
+    ((ok, again),) = memory.load(NAMES, a, moved)
+    assert ok and [x.key for x in again.b] == ["B13", "B14"]
+    assert memory.load(NAMES, a, moved[:1]) == []  # a line is gone: dropped
+    assert memory.load(("x", "y"), a, moved) == []  # other parties: their own

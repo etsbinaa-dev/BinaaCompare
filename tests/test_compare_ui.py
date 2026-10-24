@@ -124,3 +124,30 @@ def test_the_same_file_twice_is_refused(files, tmp_path):
         assert app.result is None and app.dialogs.calls == [("error", "الملف نفسه")]
     finally:
         app.destroy()
+
+
+def test_decisions_survive_closing_the_window(files, tmp_path):
+    """A crash or a power cut: the ✓ / ✗ are back when the files are compared again."""
+    for step in ("decide", "reopen"):
+        try:
+            app = CompareApp(FakeDialogs(files, tmp_path / "out.xlsx"))
+        except Exception as exc:  # no display
+            pytest.skip(f"Tk cannot open a window here: {type(exc).__name__}")
+        try:
+            app.box_a.choose()
+            app.box_b.choose()
+            app.compare_button.invoke()
+            app.update()
+            possible = app.pair_trees["possible"]
+            if step == "decide":
+                (key,) = possible.get_children()
+                possible.selection_set(key)
+                app.decide("possible", True)
+            else:
+                assert possible.get_children() == ()
+                assert "✅ متطابقة: 2" in app.headline_var.get()
+                assert "استُرجع 1 قرارًا محفوظًا" in app.note_var.get()
+                app.undo()  # undo is saved too
+                assert len(possible.get_children()) == 1
+        finally:
+            app.destroy()

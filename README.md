@@ -8,7 +8,7 @@
 - ❌ عند طرف واحد فقط
 - تصدير Excel، وتصدير الملفين الأصليين بدون المتطابق للمقارنة اليدوية
 
-يعمل محليًا بالكامل: لا إنترنت، لا حفظ، ولا يُعدَّل أي ملف أصلي.
+يعمل محليًا بالكامل: لا إنترنت، ولا يُعدَّل أي ملف أصلي. قرارات ✓ / ✗ تُحفظ على الجهاز نفسه فقط، بعد كل قرار.
 
 Compare two RIM-Soft account statements (Windows, offline). Download
 `BinaaCompare-Windows.zip` from the Releases page. License: MIT.

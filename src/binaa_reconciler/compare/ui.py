@@ -1,7 +1,8 @@
 """BinaaCompare window: two files, one button, two lists.
 
 Everything happens on this one screen: choose the two RIM-Soft files, press
-«قارن», read the two lists, export to Excel. Nothing is saved between runs.
+«قارن», read the two lists, export to Excel. The ✓ / ✗ decisions are saved
+on this computer (memory.py).
 """
 
 from __future__ import annotations
@@ -15,10 +16,9 @@ from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from binaa_reconciler.compare import manual
+from binaa_reconciler.compare import manual, memory
 from binaa_reconciler.compare.engine import (
     SIDE_AR,
-    Pair,
     Result,
     amount_text,
     common_period,
@@ -41,7 +41,7 @@ COLUMNS = ("التاريخ", "المبلغ", "الجهة", "الوصف", "الم
 WIDTHS = (90, 110, 55, 300, 110, 330)
 PAIR_COLUMNS = ("تاريخ", "مبلغ", "وصف", "تاريخ", "مبلغ", "وصف", "الفرق", "السبب")
 PAIR_WIDTHS = (90, 120, 200, 90, 120, 200, 90, 300)
-PRIVACY = "🔒 المعالجة على هذا الجهاز فقط — لا يُرسل أي ملف إلى الإنترنت ولا يُحفظ شيء"
+PRIVACY = "🔒 كل شيء على هذا الجهاز فقط — لا يُرسل أي ملف إلى الإنترنت — قراراتك تُحفظ هنا"
 
 
 class Dialogs:
@@ -129,6 +129,7 @@ class FileBox(ttk.LabelFrame):
                 text += f" — ⚠️ {len(self.loaded.problems)} سطر لم يُقرأ"
             self.status_var.set(text)
             self.status.configure(foreground=ORANGE if self.loaded.problems else GREEN)
+        self.app.restore = True  # other files: their own saved decisions
         self.app.propose_period()
         self.app.refresh_buttons()
 
@@ -189,7 +190,10 @@ class CompareApp(tk.Tk):
         self.pair_trees: dict[str, ttk.Treeview] = {}
         self.pair_frames: dict[str, ttk.Frame] = {}
         self.undo_buttons: list[ttk.Button] = []
-        self.history: list[tuple[bool, str]] = []  # (confirmed?, pair key), last last
+        # ✓ / ✗ in order (the last is undone first), saved on this computer after
+        # each one; read back the first time the two files are compared
+        self.decisions: list[memory.Decision] = []
+        self.restore = True
         self.close_total = tk.StringVar()
         for kind in ("possible", "close"):
             frame = ttk.Frame(self.tabs, padding=6)
@@ -234,8 +238,6 @@ class CompareApp(tk.Tk):
             self.frames.append(frame)
             self.trees.append(tree)
             self.totals.append(total)
-        self.confirmed: dict[str, Pair] = {}
-        self.rejected: set[str] = set()
         self.refresh_buttons()
 
     @staticmethod
@@ -253,14 +255,16 @@ class CompareApp(tk.Tk):
 
     def undo(self) -> None:
         """Take back the last ✓ / ✗ (the pair is proposed again)."""
-        if not self.history:
+        if not self.decisions:
             return
-        confirmed, key = self.history.pop()
-        if confirmed:
-            self.confirmed.pop(key, None)
-        else:
-            self.rejected.discard(key)
+        self.decisions.pop()
+        self._save()
         self.run()
+
+    def _save(self) -> None:
+        if self.result is not None:
+            with contextlib.suppress(OSError):
+                memory.save(self.result.names, self.decisions)
 
     def _double_click(self, kind: str, _event: object) -> None:
         self.decide(kind, True)
@@ -308,7 +312,7 @@ class CompareApp(tk.Tk):
         self.compare_button.state(["!disabled"] if ready else ["disabled"])
         self.manual_button.state(["!disabled"] if self.result is not None else ["disabled"])
         for button in self.undo_buttons:
-            button.state(["!disabled"] if self.history else ["disabled"])
+            button.state(["!disabled"] if self.decisions else ["disabled"])
 
     def run(self) -> None:
         a, b = self.box_a.loaded, self.box_b.loaded
@@ -322,15 +326,25 @@ class CompareApp(tk.Tk):
             self.dialogs.error("الملف نفسه", "اخترت الملف نفسه للطرفين — اختر ملف كل طرف")
             return
         self.sources = (a, b)  # the files this result was made from
+        names = (self.box_a.name, self.box_b.name)
+        restored = 0
+        if self.restore:  # files just chosen: the decisions saved for them
+            self.restore = False
+            self.decisions = memory.load(names, a.lines, b.lines)
+            restored = len(self.decisions)
         self.result = compare(
             a.lines,
             b.lines,
-            (self.box_a.name, self.box_b.name),
+            names,
             (start, end),
-            confirmed=list(self.confirmed.values()),
-            rejected=self.rejected,
+            confirmed=[pair for ok, pair in self.decisions if ok],
+            rejected={pair.key for ok, pair in self.decisions if not ok},
         )
         self.show(self.result)
+        if restored:
+            self.note_var.set(
+                f"💾 استُرجع {restored} قرارًا محفوظًا من المرة السابقة\n" + self.note_var.get()
+            )
         self.refresh_buttons()
 
     def decide(self, kind: str, accepted: bool) -> None:
@@ -347,11 +361,8 @@ class CompareApp(tk.Tk):
         pair = pairs.get(selected[0])
         if pair is None:
             return
-        if accepted:
-            self.confirmed[pair.key] = pair
-        else:
-            self.rejected.add(pair.key)
-        self.history.append((accepted, pair.key))
+        self.decisions.append((accepted, pair))
+        self._save()
         self.run()
 
     def show(self, result: Result) -> None:
