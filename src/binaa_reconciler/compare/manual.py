@@ -38,6 +38,21 @@ WRAP = Alignment(wrap_text=True, vertical="top", horizontal="right", readingOrde
 RLM = "\u200f"  # keeps Latin names and numbers in place inside Arabic text
 
 
+ARABIC_NAMES = {"binaa": "بناء", "clinique": "كلينيك", "clinic": "كلينيك", "cliniq": "كلينيك"}
+
+
+def arabic(name: str) -> str:
+    """The party's name in Arabic letters when known: no Latin word inside an
+    Arabic sentence, so the sentence never breaks (else the name as typed)."""
+    return ARABIC_NAMES.get(name.strip().casefold(), name)
+
+
+def _arabic_text(text: str, names: tuple[str, str]) -> str:
+    for name in names:
+        text = text.replace(name, arabic(name))
+    return text
+
+
 def _rtl(text: str) -> str:
     """Right-to-left text: one fact per line, each line (and each piece
     between the separators) anchored right, so names, dates and amounts stay
@@ -83,6 +98,7 @@ def statuses(result: Result, i: int) -> tuple[set[int], dict[int, tuple[str, Pat
         note = result.notes.get(x.key)
         text = f"غير موجودة عند {other}" + (f" — {note}" if note else "")
         status[x.row] = (text, RED)
+    status = {row: (_arabic_text(t, result.names), f) for row, (t, f) in status.items()}
     return matched, status
 
 
@@ -138,7 +154,8 @@ def build(result: Result, a: Loaded, b: Loaded) -> bytes:
     if wb.active is not None:
         wb.remove(wb.active)
     for i, loaded in enumerate((a, b)):
-        ws: Worksheet = wb.create_sheet(result.names[i].translate(_FORBIDDEN)[:31] or "AB"[i])
+        title = arabic(result.names[i]).translate(_FORBIDDEN)[:31] or "AB"[i]
+        ws: Worksheet = wb.create_sheet(title)
         _copy_sheet(ws, loaded, result, i)
     buf = BytesIO()
     wb.save(buf)
