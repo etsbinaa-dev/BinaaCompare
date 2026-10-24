@@ -358,7 +358,7 @@ def compare(
         for x in lines:
             if same := others.get(x.amount):
                 days = "، ".join(f"{y.day:%d/%m/%Y}" for y in same[:3])
-                result.notes[x.key] = f"⚠️ نفس المبلغ عند {names[1 - i]} فقط بتاريخ {days}"
+                result.notes[x.key] = f"⚠️ نفس المبلغ عند {names[1 - i]} بتاريخ {days}"
     for i, lines in enumerate(result.only):
         other = b if i == 0 else a
         if not other:

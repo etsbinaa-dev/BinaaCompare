@@ -21,13 +21,11 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from binaa_reconciler.compare.engine import (
-    SIDE_AR,
     Kind,
     Line,
     Pair,
     Result,
     amount_text,
-    mirror,
 )
 from binaa_reconciler.compare.files import Loaded
 from binaa_reconciler.compare.texts import reason
@@ -36,7 +34,18 @@ RED = PatternFill("solid", fgColor="F8CBAD")
 ORANGE = PatternFill("solid", fgColor="FCE4D6")
 YELLOW = PatternFill("solid", fgColor="FFF2CC")
 GREY = PatternFill("solid", fgColor="E7E6E6")
-WRAP = Alignment(wrap_text=True, vertical="top", horizontal="right")
+WRAP = Alignment(wrap_text=True, vertical="top", horizontal="right", readingOrder=2)
+RLM = "\u200f"  # keeps Latin names and numbers in place inside Arabic text
+
+
+def _rtl(text: str) -> str:
+    """Right-to-left text: one fact per line, each line (and each piece
+    between the separators) anchored right, so names, dates and amounts stay
+    where they are read."""
+    lines = text.replace(" — ", "\n").split("\n")
+    return "\n".join(RLM + line.replace(": ", f":{RLM} ").replace(" ", f" {RLM}") for line in lines)
+
+
 DATE_FORMAT = "DD/MM/YYYY"
 _FORBIDDEN = str.maketrans(dict.fromkeys("[]:*?/\\", " "))
 
@@ -51,8 +60,7 @@ def _other(pair: Pair, line: Line) -> str:
 
 def statuses(result: Result, i: int) -> tuple[set[int], dict[int, tuple[str, PatternFill]]]:
     """Rows to drop (matched) and the status of each remaining row of file i."""
-    a, b = result.names
-    me, other = (a, b) if i == 0 else (b, a)
+    other = result.names[1 - i]
     matched: set[int] = set()
     for x, y in result.matched:
         matched.add((x, y)[i].row)
@@ -73,59 +81,15 @@ def statuses(result: Result, i: int) -> tuple[set[int], dict[int, tuple[str, Pat
                 status[x.row] = (text, YELLOW)
     for x in result.only[i]:
         note = result.notes.get(x.key)
-        text = f"عند {me} وليس عند {other}" + (f" — {note}" if note else "")
+        text = f"غير موجودة عند {other}" + (f" — {note}" if note else "")
         status[x.row] = (text, RED)
     return matched, status
-
-
-def fixes(result: Result, i: int) -> dict[int, str]:
-    """The suggested correction in RIM-Soft for each remaining row of file i.
-    Who is right is decided together from the documents: when it is not
-    known, both possibilities are written."""
-    a, b = result.names
-    me, other = (a, b) if i == 0 else (b, a)
-    mine = "AB"[i]
-    out: dict[int, str] = {}
-    for pair in result.possible:
-        for x in pair.lines:
-            if x.key[0] != mine:
-                continue
-            if pair.kind is Kind.REVERSAL:
-                out[x.row] = "لا تصحيح: الحركة وعكسها أثرهما صفر"
-            elif pair.kind is Kind.SAME:
-                out[x.row] = "لا تصحيح في المبلغ: التاريخ فقط مختلف (يُعدَّل إن أردتم التطابق)"
-            elif pair.kind is Kind.SUM:
-                out[x.row] = "لا تصحيح: المجموع مساوٍ — يكفي التأكد من الأوراق"
-            else:  # SIDE: the same side on both files
-                side, opposite = SIDE_AR[x.side], SIDE_AR[mirror(x.side)]
-                out[x.row] = (
-                    f"أحدكما سجّلها في الجهة الخطأ: إن أخطأ {me} يحوّل قيده من {side} "
-                    f"إلى {opposite} — وإن أخطأ {other} يحوّل قيده من {side} إلى {opposite}"
-                )
-    for pair in result.close:
-        for x in pair.lines:
-            if x.key[0] != mine:
-                continue
-            theirs = pair.b if x in pair.a else pair.a
-            o = amount_text(sum(y.amount for y in theirs))
-            m = amount_text(x.amount)
-            out[x.row] = (
-                f"اتفقوا على المبلغ الصحيح: إن كان {o} يعدّل {me} قيده إلى {o} — "
-                f"وإن كان {m} يعدّل {other} قيده إلى {m}"
-            )
-    for x in result.only[i]:
-        out[x.row] = (
-            f"إن كانت صحيحة: يسجلها {other} {SIDE_AR[mirror(x.side)]} {amount_text(x.amount)} "
-            f"بتاريخ {x.day:%d/%m/%Y} — وإن كانت خطأ: يلغيها {me}"
-        )
-    return out
 
 
 def _copy_sheet(target: Worksheet, loaded: Loaded, result: Result, i: int) -> None:
     source_wb = load_workbook(BytesIO(loaded.data), data_only=True)
     source = source_wb.worksheets[loaded.sheet_index]
     matched, status = statuses(result, i)
-    fix = fixes(result, i)
     transaction_rows = {x.row for x in loaded.lines}
     days = {x.row: x.day for x in loaded.lines}  # the dates as read (not serials)
     second_rows = {v: k for k, v in loaded.continuation.items()}  # 2nd row -> 1st
@@ -148,24 +112,18 @@ def _copy_sheet(target: Worksheet, loaded: Loaded, result: Result, i: int) -> No
         if n in days and loaded.date_col is not None:  # never a bare number
             target.cell(out, loaded.date_col + 1, days[n]).number_format = DATE_FORMAT
         if n == loaded.header_row:
-            for col, title in ((status_col, "الحالة"), (status_col + 1, "التصحيح المقترح")):
-                target.cell(out, col, title).font = Font(bold=True)
+            target.cell(out, status_col, "الحالة").font = Font(bold=True)
         elif n > loaded.header_row:
             text, fill = status.get(first, ("خارج الفترة المختارة", GREY))
             if n == first:
-                for col, note in (
-                    (status_col, text),
-                    (status_col + 1, fix.get(first, "يُراجع في الفترة التالية")),
-                ):
-                    target.cell(out, col, note).alignment = WRAP
-            for col in range(1, status_col + 2):
+                target.cell(out, status_col, _rtl(text)).alignment = WRAP
+            for col in range(1, status_col + 1):
                 target.cell(out, col).fill = fill
     for col in range(1, width + 1):
         letter = get_column_letter(col)
         target.column_dimensions[letter].width = source.column_dimensions[letter].width or 14
     # narrow note columns, the text wraps: the page fits the screen
-    target.column_dimensions[get_column_letter(status_col)].width = 34
-    target.column_dimensions[get_column_letter(status_col + 1)].width = 44
+    target.column_dimensions[get_column_letter(status_col)].width = 42
     target.freeze_panes = f"A{loaded.header_row + 1}"
 
 
@@ -186,4 +144,4 @@ def save(result: Result, a: Loaded, b: Loaded, target: Path) -> Path:
     return target
 
 
-__all__ = ["build", "fixes", "save", "statuses"]
+__all__ = ["build", "save", "statuses"]

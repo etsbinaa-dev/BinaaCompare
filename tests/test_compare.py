@@ -213,14 +213,11 @@ def test_manual_export_drops_matched_rows_and_keeps_the_original_columns():
     rows = [tuple(r) for r in wb["binaa"].iter_rows(values_only=True)]
     assert rows[0][:3] == ("N°", "Date", "Compte") and rows[0][8] == "الحالة"
     assert [r[0] for r in rows[1:]] == [2, None, 3]  # row 1 (matched) is gone
-    assert rows[1][8] == "عند binaa وليس عند clinique"
-    assert rows[3][8].startswith("عند binaa وليس عند clinique — بعد آخر عملية في ملف clinique")
+    plain = [str(r[8]).replace("\u200f", "") for r in rows]
+    assert plain[1] == "غير موجودة عند clinique"
+    assert plain[3].startswith("غير موجودة عند clinique\nبعد آخر عملية في ملف clinique")
     assert rows[2][8] is None and rows[2][1] == "OD-2"  # the 2nd row, unchanged
-    assert rows[0][9] == "التصحيح المقترح"
-    assert rows[1][9] == (
-        "إن كانت صحيحة: يسجلها clinique مدين 1,870 بتاريخ 14/09/2026 — وإن كانت خطأ: يلغيها binaa"
-    )
-    assert rows[2][9] is None
+    assert len(rows[0]) == 9  # no suggested-correction column
     assert wb["binaa"]["A2"].fill.fgColor.rgb.endswith("F8CBAD")
     assert [r[0] for r in wb["clinique"].iter_rows(values_only=True)] == ["N°"]
 
@@ -245,25 +242,6 @@ def test_a_sum_needs_lines_of_one_day_and_never_stalls_on_a_busy_day():
     assert r.possible == []
 
 
-def test_suggested_corrections_say_who_writes_what():
-    r = run(
-        [
-            line("A1", 4, D, 3_000),
-            line("A2", 3, D, 10_000),
-            line("A4", 6, D, 700),
-            line("A5", 7, C, 700),
-        ],
-        [line("B1", 4, C, 1_200), line("B2", 4, C, 1_800), line("B3", 3, C, 10_150)],
-    )
-    fa = manual.fixes(r, 0)
-    assert fa[1].startswith("لا تصحيح: المجموع")
-    assert fa[2] == (
-        "اتفقوا على المبلغ الصحيح: إن كان 10,150 يعدّل binaa قيده إلى 10,150 — "
-        "وإن كان 10,000 يعدّل clinique قيده إلى 10,000"
-    )
-    assert fa[4] == fa[5] == "لا تصحيح: الحركة وعكسها أثرهما صفر"
-
-
 def test_saved_decisions_follow_the_lines_not_the_excel_rows():
     a = [line("A3", 4, D, 3_000)]
     b = [line("B3", 4, C, 1_200), line("B4", 4, C, 1_800), line("B5", 9, C, 77)]
@@ -282,10 +260,10 @@ def test_manual_export_writes_dates_even_when_the_file_has_serial_numbers():
     result = compare(a.lines, b.lines, ("binaa", "clinique"), (d(1), d(30)))
     ws = load_workbook(io.BytesIO(manual.build(result, a, b)))["binaa"]
     assert ws["B2"].value.date() == date(2026, 9, 14) and ws["B2"].number_format == "DD/MM/YYYY"
-    assert ws["J2"].alignment.wrap_text  # the notes wrap: no sideways scrolling
+    assert ws["I2"].alignment.wrap_text and ws["I2"].alignment.readingOrder == 2
 
 
 def test_the_same_amount_alone_on_both_sides_is_pointed_out():
     r = run([line("A1", 2, D, 4_000)], [line("B1", 25, C, 4_000)])  # 23 days apart
-    assert r.notes["A1"] == "⚠️ نفس المبلغ عند clinique فقط بتاريخ 25/09/2026"
-    assert r.notes["B1"] == "⚠️ نفس المبلغ عند binaa فقط بتاريخ 02/09/2026"
+    assert r.notes["A1"] == "⚠️ نفس المبلغ عند clinique بتاريخ 25/09/2026"
+    assert r.notes["B1"] == "⚠️ نفس المبلغ عند binaa بتاريخ 02/09/2026"
