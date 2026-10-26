@@ -34,7 +34,8 @@ MONEY = "#,##0"
 @dataclass(frozen=True)
 class Row:
     day: date
-    label: str
+    our_label: str  # each party's own description (empty where missing)
+    their_label: str
     ours: int | None  # whole units, as in our books (None: missing)
     theirs: int | None  # as in theirs
     owed: str  # «لصالح <name>»: who the operation favours
@@ -49,17 +50,21 @@ def _favour(x: Line, ours: bool, names: tuple[str, str]) -> str:
     return f"لصالح {us if (x.side is LedgerSide.DEBIT) == ours else them}"
 
 
+def _labels(lines: tuple[Line, ...]) -> str:
+    return " / ".join(x.label for x in lines if x.label)
+
+
 def _total(lines: tuple[Line, ...]) -> int:
     return units(sum(x.amount for x in lines))
 
 
 def rows(result: Result) -> list[Row]:
     out = [
-        Row(x.day, x.label, units(x.amount), None, _favour(x, True, result.names), "", RED)
+        Row(x.day, x.label, "", units(x.amount), None, _favour(x, True, result.names), "", RED)
         for x in result.only[0]
     ]
     out += [
-        Row(y.day, y.label, None, units(y.amount), _favour(y, False, result.names), "", RED)
+        Row(y.day, "", y.label, None, units(y.amount), _favour(y, False, result.names), "", RED)
         for y in result.only[1]
     ]
     for pair in result.close:
@@ -67,7 +72,8 @@ def rows(result: Result) -> list[Row]:
         out.append(
             Row(
                 pair.b[0].day,
-                pair.b[0].label or pair.a[0].label,
+                _labels(pair.a),
+                _labels(pair.b),
                 _total(pair.a),
                 _total(pair.b),
                 _favour(pair.b[0], False, result.names),
@@ -86,11 +92,11 @@ def rows(result: Result) -> list[Row]:
             note += f" — مجموع {max(len(pair.a), len(pair.b))} عمليات"
         elif pair.kind is Kind.SIDE:
             note += " — نفس الجهة عند الطرفين"
-        label = " / ".join(x.label for x in pair.b if x.label) or pair.a[0].label
         out.append(
             Row(
                 days[0],
-                label,
+                _labels(pair.a),
+                _labels(pair.b),
                 _total(pair.a),
                 _total(pair.b),
                 _favour(pair.b[0], False, result.names),
@@ -111,14 +117,15 @@ def build(result: Result) -> bytes:
     heads = (
         "رقم",
         "التاريخ",
-        "البيان",
+        f"بيان {us}",
         f"عند {us}",
+        f"بيان {them}",
         f"عند {them}",
         "لصالح",
         "ملاحظة",
         "الرد",
     )
-    for col, width in zip("ABCDEFGH", (6, 12, 34, 14, 14, 9, 30, 22), strict=True):
+    for col, width in zip("ABCDEFGHI", (6, 12, 28, 13, 28, 13, 14, 26, 18), strict=True):
         ws.column_dimensions[col].width = width
     ws.append([f"مقارنة الحساب بين {us} و{them}"])
     ws["A1"].font = Font(bold=True, size=14)
@@ -133,12 +140,12 @@ def build(result: Result) -> bytes:
         cell.font, cell.fill, cell.alignment, cell.border = Font(bold=True), HEAD, CELL, BOX
     ws.freeze_panes = f"A{ws.max_row + 1}"
     for n, r in enumerate(rows(result), start=1):
-        ws.append([n, r.day, r.label, r.ours, r.theirs, r.owed, r.note, None])
+        ws.append([n, r.day, r.our_label, r.ours, r.their_label, r.theirs, r.owed, r.note, None])
         line = ws[ws.max_row]
         for cell in line:
             cell.alignment, cell.border = CELL, BOX
         line[1].number_format = "DD/MM/YYYY"
-        for cell in line[3:5]:
+        for cell in (line[3], line[5]):
             cell.number_format = MONEY
             cell.fill = r.fill if (r.fill is not RED or cell.value is None) else PatternFill()
     gaps = [r for r in rows(result) if r.fill is YELLOW]

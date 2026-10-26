@@ -328,9 +328,21 @@ def test_one_file_for_both_parties_side_by_side_by_date():
     assert ws.title == "بناء وكلينك" and ws.sheet_view.rightToLeft
     values = [tuple(r) for r in ws.iter_rows(values_only=True)]
     head = values.index(
-        ("رقم", "التاريخ", "البيان", "عند بناء", "عند كلينك", "لصالح", "ملاحظة", "الرد")
+        (
+            "رقم",
+            "التاريخ",
+            "بيان بناء",
+            "عند بناء",
+            "بيان كلينك",
+            "عند كلينك",
+            "لصالح",
+            "ملاحظة",
+            "الرد",
+        )
     )
-    lines = [(r[0], r[1].day, r[3], r[4], r[5], r[6]) for r in values[head + 1 :] if r[1]]
+    lines = [(r[0], r[1].day, r[3], r[5], r[6], r[7]) for r in values[head + 1 :] if r[1]]
+    pair = values[head + 3]  # both descriptions on a line found on both sides
+    assert (pair[2], pair[4]) == ("SYN", "SYN")
     assert lines == [
         (1, 3, 500, None, "لصالح بناء", None),  # missing at clinique
         (2, 4, 200, None, "لصالح كلينك", None),
@@ -342,7 +354,7 @@ def test_one_file_for_both_parties_side_by_side_by_date():
     totals = [str(c) for r in values for c in r if "مجموع" in str(c)]
     assert totals == ["مجموع فروق المبالغ (1 عملية): 150"]  # the only total
     first = head + 2
-    assert ws.cell(first, 5).fill.fgColor.rgb.endswith("F8CBAD")  # the missing cell is red
+    assert ws.cell(first, 6).fill.fgColor.rgb.endswith("F8CBAD")  # the missing cell is red
     assert ws.cell(first, 4).fill.fgColor.rgb in (None, "00000000")
 
 
