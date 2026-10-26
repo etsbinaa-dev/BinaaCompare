@@ -47,9 +47,13 @@ PRIVACY = "🔒 كل شيء على هذا الجهاز فقط — لا يُرس�
 class Dialogs:
     """The system dialogs (replaced in tests)."""
 
-    def ask_open(self) -> Path | None:
+    def ask_open(self, last: Path | None = None) -> Path | None:
+        """Opens where the last file was (and proposes it)."""
         name = filedialog.askopenfilename(
-            title="اختر ملف RIM-Soft", filetypes=[("Excel", "*.xlsx *.xlsm"), ("الكل", "*.*")]
+            title="اختر ملف RIM-Soft",
+            filetypes=[("Excel", "*.xlsx *.xlsm"), ("الكل", "*.*")],
+            initialdir=str(last.parent) if last else None,
+            initialfile=last.name if last else None,
         )
         return Path(name) if name else None
 
@@ -106,11 +110,12 @@ class FileBox(ttk.LabelFrame):
         return self.name_var.get().strip() or self.key
 
     def choose(self) -> None:
-        path = self.app.dialogs.ask_open()
+        path = self.app.dialogs.ask_open(memory.last_file(self.key))
         if path is not None:
             self.load(path)
 
-    def load(self, path: Path) -> None:
+    def load(self, path: Path, again: bool = False) -> None:
+        """`again`: the file of last time, reopened at start."""
         self.app.configure(cursor="watch")
         self.app.update_idletasks()
         try:
@@ -123,6 +128,11 @@ class FileBox(ttk.LabelFrame):
             self.loaded = None
         else:
             text = f"✅ {path.name}: {len(self.loaded.lines)} عملية"
+            if again:  # which export it is: its date, to check it is the latest
+                saved = datetime.fromtimestamp(path.stat().st_mtime)
+                text = f"📂 الملف السابق ({saved:%d/%m/%Y %H:%M}) — " + text
+            with contextlib.suppress(OSError):
+                memory.remember_file(self.key, path)
             if self.loaded.merged:
                 text += f" — {self.loaded.merged} عملية مقسومة على سطرين دُمجت"
             if self.loaded.problems:
@@ -160,6 +170,7 @@ class CompareApp(tk.Tk):
         self.box_b = FileBox(files, self, "الطرف الثاني", "clinique", "B")
         self.box_a.pack(side="right", fill="x", expand=True, padx=(0, 6))
         self.box_b.pack(side="right", fill="x", expand=True)
+        self.after_idle(self._reopen_last_files)
 
         actions = ttk.Frame(root)
         actions.pack(fill="x")
@@ -253,6 +264,12 @@ class CompareApp(tk.Tk):
             text.set("  |  ".join(str(v) for v in values if str(v).strip()))
 
         tree.bind("<<TreeviewSelect>>", show, add="+")
+
+    def _reopen_last_files(self) -> None:
+        """The two files of last time are loaded again (another can be chosen)."""
+        for box in (self.box_a, self.box_b):
+            if box.loaded is None and (last := memory.last_file(box.key)) is not None:
+                box.load(last, again=True)
 
     def undo(self) -> None:
         """Take back the last ✓ / ✗ (the pair is proposed again)."""

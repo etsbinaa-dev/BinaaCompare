@@ -103,4 +103,42 @@ def forget(names: tuple[str, str]) -> None:
     save(names, [])
 
 
-__all__ = ["ENV_OVERRIDE", "Decision", "folder", "forget", "load", "save"]
+def _settings() -> Path:
+    return folder() / "settings.json"
+
+
+def last_file(key: str) -> Path | None:
+    """The file last chosen for side `key` ("A" / "B"), if it is still there."""
+    try:
+        data = json.loads(_settings().read_text(encoding="utf-8"))
+        path = Path(data["files"][key])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return path if path.is_file() else None
+
+
+def remember_file(key: str, path: Path) -> None:
+    try:
+        data = json.loads(_settings().read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
+            raise ValueError
+    except (OSError, ValueError):
+        data = {"files": {}}
+    data["files"][key] = str(Path(path).resolve())
+    target = _settings()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, target)
+
+
+__all__ = [
+    "ENV_OVERRIDE",
+    "Decision",
+    "folder",
+    "forget",
+    "last_file",
+    "load",
+    "remember_file",
+    "save",
+]

@@ -27,7 +27,8 @@ class FakeDialogs:
     def __init__(self, files, save_to):
         self.files, self.save_to, self.calls = list(files), save_to, []
 
-    def ask_open(self):
+    def ask_open(self, last=None):
+        self.last = last
         return self.files.pop(0)
 
     def ask_save(self, suggested):
@@ -189,3 +190,26 @@ def test_a_click_on_a_column_title_sorts_the_list(tmp_path):
         assert column(2) == sorted(column(2))
     finally:
         app.destroy()
+
+
+def test_the_files_of_last_time_are_opened_again(files, tmp_path):
+    for step in ("choose", "reopen"):
+        try:
+            app = CompareApp(FakeDialogs(files if step == "choose" else [], tmp_path / "o.xlsx"))
+        except Exception as exc:  # no display
+            pytest.skip(f"Tk cannot open a window here: {type(exc).__name__}")
+        try:
+            app.update()
+            if step == "choose":
+                app.box_a.choose()
+                app.box_b.choose()
+            else:  # nothing chosen: both files are back, ready to compare
+                assert app.box_a.status_var.get().startswith("📂 الملف السابق")
+                assert "a.xlsx: 3 عملية" in app.box_a.status_var.get()
+                assert app.box_b.loaded is not None
+                assert app.compare_button.instate(["!disabled"])
+                app.dialogs.files = [files[0]]
+                app.box_a.choose()  # the dialog opens where the last file is
+                assert app.dialogs.last == files[0].resolve()
+        finally:
+            app.destroy()
