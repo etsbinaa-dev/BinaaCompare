@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from binaa_reconciler.compare.engine import SIDE_AR, Kind, Line, Pair, Result, amount_text
 
 
@@ -47,6 +49,45 @@ def total_text(result: Result, i: int) -> str:
     return f"المجموع: {amount_text(result.total(i))}"
 
 
+def _where(result: Result) -> dict[str, str]:
+    """What became of each line: matched with what, in which list."""
+    a, b = result.names
+    out: dict[str, str] = {}
+    for x, y in result.matched:
+        out[x.key] = f"مطابقة مع {b} {y.day:%d/%m}"
+        out[y.key] = f"مطابقة مع {a} {x.day:%d/%m}"
+    for pair in result.confirmed:
+        for x in pair.lines:
+            out[x.key] = "مطابقة (أكدتها أنت)"
+    for pair in result.possible:
+        for x in pair.lines:
+            out[x.key] = "في «قد تكون نفس العملية»"
+    for pair in result.close:
+        for x in pair.lines:
+            out[x.key] = "في «فرق في المبلغ»"
+    for i, lines in enumerate(result.only):
+        for x in lines:
+            out[x.key] = f"عند {result.names[i]} فقط"
+    for x in result.settled:
+        out[x.key] = "تمت تسويتها"
+    return out
+
+
+def same_amount(result: Result, line: Line, others: Sequence[Line], other: str) -> str:
+    """Every line of the other file with this amount, and what became of it:
+    why a line is alone although the other party has the same amount."""
+    where = _where(result)
+    found = sorted((x for x in others if x.amount == line.amount), key=lambda x: x.day)
+    if not found:
+        return f"لا توجد عند {other} أي عملية بالمبلغ {amount_text(line.amount)}"
+    parts = [
+        f"{x.day:%d/%m/%Y} {SIDE_AR[x.side]}: {where.get(x.key, 'خارج الفترة المختارة')}"
+        for x in found[:6]
+    ]
+    more = f" (+{len(found) - 6})" if len(found) > 6 else ""
+    return f"نفس المبلغ عند {other}: " + " | ".join(parts) + more
+
+
 def reason(pair: Pair, names: tuple[str, str]) -> str:
     a, b = names
     if pair.kind is Kind.REVERSAL:
@@ -75,4 +116,12 @@ def side_cells(lines: tuple[Line, ...]) -> tuple[str, str, str]:
     return " ، ".join(days), amount, label
 
 
-__all__ = ["footnote", "headline", "reason", "side_cells", "title", "total_text"]
+__all__ = [
+    "footnote",
+    "headline",
+    "reason",
+    "same_amount",
+    "side_cells",
+    "title",
+    "total_text",
+]

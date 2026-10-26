@@ -361,3 +361,17 @@ def test_a_line_settled_by_hand_leaves_the_list_and_is_remembered():
     assert "✔️ تمت تسويتها: 2" in headline(r)
     memory.save(NAMES, settled)
     assert [p.kind for _, p in memory.load(NAMES, a, b)] == [Kind.SETTLED, Kind.SETTLED]
+
+
+def test_why_a_line_is_alone_although_the_other_side_has_the_same_amount():
+    from binaa_reconciler.compare.texts import same_amount
+
+    a = [line("A1", 20, D, 3_402)]
+    b = [line("B1", 21, C, 3_402), line("B2", 5, C, 3_402), line("B3", 9, C, 77)]
+    r = run(a, b)
+    (alone,) = [x for x in r.only[1] if x.amount == 340_200]  # B2: A1 went to B1
+    assert same_amount(r, alone, a, "binaa") == (
+        "نفس المبلغ عند binaa: 20/09/2026 مدين: مطابقة مع clinique 21/09"
+    )
+    (other,) = [x for x in r.only[1] if x.key == "B3"]
+    assert same_amount(r, other, a, "binaa") == "لا توجد عند binaa أي عملية بالمبلغ 77"

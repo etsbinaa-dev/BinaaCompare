@@ -31,6 +31,7 @@ from binaa_reconciler.compare.texts import (
     footnote,
     headline,
     reason,
+    same_amount,
     side_cells,
     title,
     total_text,
@@ -269,6 +270,11 @@ class CompareApp(tk.Tk):
             ).pack(side="right", padx=8)
             total = tk.StringVar()
             label(frame, textvariable=total, foreground=GREY).pack(side="bottom", fill="x")
+            same = tk.StringVar()  # why alone: the same amount on the other side
+            label(frame, textvariable=same, foreground=ORANGE, wraplength=1100).pack(
+                side="bottom", fill="x"
+            )
+            tree.bind("<<TreeviewSelect>>", partial(self._show_same_amount, i, same), add="+")
             self._details(frame, tree)
             self._list_last(tree)
             self.frames.append(frame)
@@ -303,6 +309,20 @@ class CompareApp(tk.Tk):
         for box in (self.box_a, self.box_b):
             if box.loaded is None and (last := memory.last_file(box.key)) is not None:
                 box.load(last, again=True)
+
+    def _show_same_amount(self, i: int, text: tk.StringVar, _event: object = None) -> None:
+        """Under a line alone on side i: every line of the other file with the
+        same amount, and what became of it."""
+        selected = self.trees[i].selection()
+        if self.result is None or self.sources is None or not selected:
+            text.set("")
+            return
+        line = next((x for x in self.result.only[i] if x.key == selected[0]), None)
+        if line is None:
+            text.set("")
+            return
+        others = self.sources[1 - i].lines
+        text.set(same_amount(self.result, line, others, self.result.names[1 - i]))
 
     def settle(self, i: int) -> None:
         """✔ the selected lines of side i were settled by hand (corrected in
