@@ -19,6 +19,7 @@ Amounts are shown in whole units. Pure functions: no file, no screen.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -299,6 +300,25 @@ def _possible(
     return out
 
 
+# delivery note numbers written by hand in the descriptions (BL 38957,
+# BR 26A00587): the same number twice in one file is a double entry. Not the
+# NFT numbers: RIM-Soft gives every entry a new one, a double entry included.
+_REF = re.compile(r"\b(BL|BR)\s*([0-9A-Z]*[0-9][0-9A-Z]{3,})")
+
+
+def _refs(label: str) -> set[str]:
+    """«BL 38957», «BR 26A00587»… in one spelling (BL38957 = BL 38957)."""
+    return {f"{kind} {code}" for kind, code in _REF.findall(label.upper())}
+
+
+def _numbers(lines: Sequence[Line]) -> dict[str, list[Line]]:
+    found: dict[str, list[Line]] = {}
+    for x in lines:
+        for number in _refs(x.label):
+            found.setdefault(number, []).append(x)
+    return found
+
+
 def compare(
     a: Sequence[Line],
     b: Sequence[Line],
@@ -358,12 +378,23 @@ def compare(
         sum(not inside(x.day) for x in left),
         sum(not inside(x.day) for x in right),
     )
+    for i, lines in enumerate(result.only):  # a document number written twice in one file
+        seen = _numbers((a, b)[i])
+        for x in lines:
+            for number in sorted(_refs(x.label)):
+                twins = [y for y in seen.get(number, []) if y.key != x.key]
+                if twins:
+                    days = "، ".join(f"{y.day:%d/%m/%Y}" for y in twins[:3])
+                    note = f"⚠️ رقم {number} مسجّل مرتين في ملف {names[i]} ({days})"
+                    result.notes[x.key] = note
+                    break
     for i, lines in enumerate(result.only):  # the same amount alone on the other side
         others = _by_amount(result.only[1 - i])
         for x in lines:
             if same := others.get(x.amount):
                 days = "، ".join(f"{y.day:%d/%m/%Y}" for y in same[:3])
-                result.notes[x.key] = f"⚠️ نفس المبلغ عند {names[1 - i]} بتاريخ {days}"
+                same_note = f"⚠️ نفس المبلغ عند {names[1 - i]} بتاريخ {days}"
+                result.notes[x.key] = " — ".join(filter(None, (result.notes.get(x.key), same_note)))
     for i, lines in enumerate(result.only):
         other = b if i == 0 else a
         if not other:

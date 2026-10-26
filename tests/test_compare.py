@@ -375,3 +375,15 @@ def test_why_a_line_is_alone_although_the_other_side_has_the_same_amount():
     )
     (other,) = [x for x in r.only[1] if x.key == "B3"]
     assert same_amount(r, other, a, "binaa") == "لا توجد عند binaa أي عملية بالمبلغ 77"
+
+
+def test_a_delivery_note_number_written_twice_in_one_file_is_pointed_out():
+    a = [
+        line("A1", 14, D, 3_402, "60t chinguitt BL 38957 BR 26A00587"),
+        line("A2", 20, D, 3_402, "60t chinguitt bl38957"),  # the same delivery, again
+        line("A3", 22, D, 900, "NFT 26T01660"),  # NFT: given by RIM-Soft, never compared
+        line("A4", 23, D, 700, "NFT 26T01660"),
+    ]
+    r = run(a, [line("B1", 14, C, 3_402)])
+    assert r.notes["A2"].startswith("⚠️ رقم BL 38957 مسجّل مرتين في ملف binaa (14/09/2026)")
+    assert "مرتين" not in r.notes.get("A3", "") + r.notes.get("A4", "")
