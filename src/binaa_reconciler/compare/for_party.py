@@ -1,12 +1,12 @@
 """One file for both parties, open on both screens during the phone call.
 
-One right-to-left sheet, sorted by date, one line per operation to
-settle: each party's own date, description and amount(s) side by side, as in
-its books (red, empty: missing there — with in whose favour it is, clear for
-both readers; yellow: a different amount; orange: to confirm), and an empty
-«الرد» column to fill in during the call. No other totals: the two files rarely
-start and end on the same day; only the amount gaps are added up. Nothing
-else of our books.
+Five columns, right to left, sorted by date: the date and description of
+whoever has the operation, each party's amount, and a short note. Only what
+needs the call: what is missing on one side (red, with in whose favour it
+is — clear for both readers) and the amount gaps (yellow, with the other
+date and description when they differ). The possible pairs are decided in
+the application beforehand. Only the amount gaps are added up: the two files
+rarely start and end on the same day. Nothing else of our books.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill
 from openpyxl.styles import Side as Edge
 
-from binaa_reconciler.compare.engine import Kind, Line, Result, units
-from binaa_reconciler.compare.manual import ORANGE, RED, YELLOW, arabic
+from binaa_reconciler.compare.engine import Line, Result, units
+from binaa_reconciler.compare.manual import RED, YELLOW, arabic
 from binaa_reconciler.core.models import LedgerSide
 
 HEAD = PatternFill("solid", fgColor="D9E1F2")
@@ -85,20 +85,14 @@ def rows(result: Result) -> list[Row]:
         Row(Part(), Part((y,)), f"ناقصة عند {us} — {_favour(y, False, result.names)}", RED)
         for y in result.only[1]
     ]
-    for pair in result.close:
+    for pair in result.close:  # the possible pairs are decided in the application
         gap = abs(sum(x.amount for x in pair.a) - sum(x.amount for x in pair.b))
-        out.append(Row(Part(pair.a), Part(pair.b), f"فرق في المبلغ: {units(gap):,}", YELLOW))
-    for pair in result.possible:
-        if not (pair.a and pair.b) or pair.kind is Kind.REVERSAL:
-            continue  # a movement and its reversal in one file: not theirs to check
-        note = "قد تكون نفس العملية"
-        if pair.kind is Kind.SAME:
-            note += " — بتاريخ مختلف"
-        elif pair.kind is Kind.SUM:
-            note += " — مجموع عدة عمليات"
-        elif pair.kind is Kind.SIDE:
-            note += " — بنفس الجهة عند الطرفين"
-        out.append(Row(Part(pair.a), Part(pair.b), note, ORANGE))
+        note = f"فرق في المبلغ: {units(gap):,}"
+        if Part(pair.b).day != Part(pair.a).day:
+            note += f" — عند {them} بتاريخ {Part(pair.b).day}"
+        if Part(pair.b).label:
+            note += f" — بيان {them}: {Part(pair.b).label}"
+        out.append(Row(Part(pair.a), Part(pair.b), note, YELLOW))
     out.sort(key=lambda r: r.first_day)
     return out
 
@@ -109,46 +103,36 @@ def build(result: Result) -> bytes:
     ws = wb.active if wb.active is not None else wb.create_sheet()
     ws.title = f"{us} و{them}"[:31]
     ws.sheet_view.rightToLeft = True
-    heads = (
-        f"تاريخ {us}",
-        f"بيان {us}",
-        f"مبلغ {us}",
-        f"تاريخ {them}",
-        f"بيان {them}",
-        f"مبلغ {them}",
-        "ملاحظة",
-        "الرد",
-    )
-    for col, width in zip("ABCDEFGH", (12, 26, 14, 12, 26, 14, 30, 18), strict=True):
+    heads = ("التاريخ", "البيان", f"مبلغ {us}", f"مبلغ {them}", "ملاحظة")
+    for col, width in zip("ABCDE", (12, 34, 15, 15, 44), strict=True):
         ws.column_dimensions[col].width = width
 
     def wide(text: str, size: int = 11) -> None:
         """A line of text across the whole table (never cut by a narrow column)."""
         ws.append([text])
-        ws.merge_cells(start_row=ws.max_row, start_column=1, end_row=ws.max_row, end_column=8)
+        ws.merge_cells(start_row=ws.max_row, start_column=1, end_row=ws.max_row, end_column=5)
         ws.cell(ws.max_row, 1).font = Font(bold=size > 11, size=size)
         ws.cell(ws.max_row, 1).alignment = Alignment(horizontal="right", readingOrder=2)
 
     wide(f"مقارنة الحساب بين {us} و{them}", 14)
     if result.period:
         wide(f"الفترة: {result.period[0]:%d/%m/%Y} — {result.period[1]:%d/%m/%Y}")
-    wide("الأحمر: ناقصة عند أحد الطرفين — الأصفر: مبلغ مختلف — البرتقالي: للتأكد")
+    wide("الأحمر: ناقصة عند أحد الطرفين — الأصفر: مبلغ مختلف")
     ws.append([])
     ws.append(list(heads))
     for cell in ws[ws.max_row]:
         cell.font, cell.fill, cell.alignment, cell.border = Font(bold=True), HEAD, CELL, BOX
     ws.freeze_panes = f"A{ws.max_row + 1}"
     for r in rows(result):
-        o, t = r.ours, r.theirs
-        ws.append([o.day, o.label, o.amount, t.day, t.label, t.amount, r.note, None])
+        o, t = r.ours, r.theirs  # the date and description of whoever has it (ours first)
+        ws.append([o.day or t.day, o.label or t.label, o.amount, t.amount, r.note])
         line = ws[ws.max_row]
         for cell in line:
             cell.alignment, cell.border = CELL, BOX
-        for cells, side in ((line[0:3], o), (line[3:6], t)):
-            cells[2].number_format = MONEY
-            if r.fill is not RED or not side.lines:  # red: the missing side only
-                for cell in cells:
-                    cell.fill = r.fill
+        for cell, part in ((line[2], o), (line[3], t)):
+            cell.number_format = MONEY
+            if r.fill is not RED or not part.lines:  # red: the missing side only
+                cell.fill = r.fill
     gaps = [r for r in rows(result) if r.fill is YELLOW]
     if gaps:  # the one total that means something: the amount gaps
         total = sum(
@@ -157,7 +141,7 @@ def build(result: Result) -> bytes:
         )
         total = units(total)
         ws.append([])
-        wide(f"مجموع فروق المبالغ ({len(gaps)} عملية): {total:,}", 12)
+        wide(f"مجموع الفروق في الأسطر الصفراء ({len(gaps)} عملية): {total:,}", 12)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()

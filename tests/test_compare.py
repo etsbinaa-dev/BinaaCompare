@@ -309,57 +309,43 @@ def test_a_row_without_amount_before_a_real_operation_is_not_merged():
     assert len(loaded.problems) == 1
 
 
-def test_one_file_for_both_parties_side_by_side_by_date():
+def test_one_short_file_for_both_parties_by_date():
     r = run(
+        [line("A1", 3, D, 500), line("A2", 4, C, 200), line("A3", 6, D, 10_000)],
         [
-            line("A1", 3, D, 500),
-            line("A2", 4, C, 200),
-            line("A3", 6, D, 10_000),
-            line("A4", 10, D, 4_000),
-        ],
-        [
-            line("B1", 6, C, 10_150),
+            line("B1", 7, C, 10_150),
             line("B2", 8, D, 70),
             line("B3", 9, C, 30),
-            line("B4", 20, C, 4_000),
+            line("B4", 15, C, 500),  # the same amount 12 days later: a possible pair
+            line("B5", 12, C, 1_200),
+            line("B6", 12, C, 800),
         ],
     )
     ws = load_workbook(io.BytesIO(for_party.build(r))).active
     assert ws.title == "بناء وكلينك" and ws.sheet_view.rightToLeft
     values = [tuple(r) for r in ws.iter_rows(values_only=True)]
-    heads = (
-        "تاريخ بناء",
-        "بيان بناء",
-        "مبلغ بناء",
-        "تاريخ كلينك",
-        "بيان كلينك",
-        "مبلغ كلينك",
-        "ملاحظة",
-        "الرد",
-    )
-    head = values.index(heads)
-    body = [r for r in values[head + 1 :] if r[0] or r[3]]
-    assert [(r[0], r[2], r[3], r[5], r[6]) for r in body[:-1]] == [
-        ("03/09/2026", 500, None, None, "ناقصة عند كلينك — لصالح بناء"),
-        ("04/09/2026", 200, None, None, "ناقصة عند كلينك — لصالح كلينك"),
-        # each party finds its own date and amount in its own books
-        ("06/09/2026", 10_000, "06/09/2026", 10_150, "فرق في المبلغ: 150"),
-        (None, None, "08/09/2026", 70, "ناقصة عند بناء — لصالح كلينك"),
-        (None, None, "09/09/2026", 30, "ناقصة عند بناء — لصالح بناء"),
-        ("10/09/2026", 4_000, "20/09/2026", 4_000, "قد تكون نفس العملية — بتاريخ مختلف"),
-    ]
-    assert body[-1][0] == "مجموع فروق المبالغ (1 عملية): 150"  # the only total
-    assert "A1:H1" in {str(m) for m in ws.merged_cells.ranges}  # the title is never cut
+    head = values.index(("التاريخ", "البيان", "مبلغ بناء", "مبلغ كلينك", "ملاحظة"))
+    body = [r for r in values[head + 1 :] if r[0]]
+    assert body[:-1] == [
+        ("04/09/2026", "SYN", 200, None, "ناقصة عند كلينك — لصالح كلينك"),
+        # the other date and description only where they differ
+        (
+            "06/09/2026",
+            "SYN",
+            10_000,
+            10_150,
+            "فرق في المبلغ: 150 — عند كلينك بتاريخ 07/09/2026 — بيان كلينك: SYN",
+        ),
+        ("08/09/2026", "SYN", None, 70, "ناقصة عند بناء — لصالح كلينك"),
+        ("09/09/2026", "SYN", None, 30, "ناقصة عند بناء — لصالح بناء"),
+        ("12/09/2026", "SYN", None, 800, "ناقصة عند بناء — لصالح بناء"),
+        ("12/09/2026", "SYN", None, 1_200, "ناقصة عند بناء — لصالح بناء"),
+    ]  # the possible pair (500 / 500) is not there: decided in the application
+    assert body[-1][0] == "مجموع الفروق في الأسطر الصفراء (1 عملية): 150"  # the only total
+    assert "A1:E1" in {str(m) for m in ws.merged_cells.ranges}  # the title is never cut
     first = head + 2
-    assert ws.cell(first, 5).fill.fgColor.rgb.endswith("F8CBAD")  # the missing side is red
-    assert ws.cell(first, 2).fill.fgColor.rgb in (None, "00000000")
-
-
-def test_a_sum_shows_each_amount_to_find_it_in_rimsoft():
-    r = run([line("A1", 12, D, 1_200), line("A2", 12, D, 800)], [line("B1", 12, C, 2_000)])
-    ws = load_workbook(io.BytesIO(for_party.build(r))).active
-    (row,) = [r for r in ws.iter_rows(values_only=True) if r[6] and "مجموع عدة" in str(r[6])]
-    assert row[2] == "1,200 + 800" and row[5] == 2_000
+    assert ws.cell(first, 4).fill.fgColor.rgb.endswith("F8CBAD")  # the missing side is red
+    assert ws.cell(first, 3).fill.fgColor.rgb in (None, "00000000")
 
 
 def test_a_line_settled_by_hand_leaves_the_list_and_is_remembered():
