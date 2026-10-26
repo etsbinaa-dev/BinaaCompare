@@ -127,13 +127,18 @@ def build(result: Result) -> bytes:
     )
     for col, width in zip("ABCDEFGHI", (6, 12, 28, 13, 28, 13, 14, 26, 18), strict=True):
         ws.column_dimensions[col].width = width
-    ws.append([f"مقارنة الحساب بين {us} و{them}"])
-    ws["A1"].font = Font(bold=True, size=14)
+
+    def wide(text: str, size: int = 11) -> None:
+        """A line of text across the whole table (never cut by a narrow column)."""
+        ws.append([text])
+        ws.merge_cells(start_row=ws.max_row, start_column=1, end_row=ws.max_row, end_column=9)
+        ws.cell(ws.max_row, 1).font = Font(bold=size > 11, size=size)
+        ws.cell(ws.max_row, 1).alignment = Alignment(horizontal="right", readingOrder=2)
+
+    wide(f"مقارنة الحساب بين {us} و{them}", 14)
     if result.period:
-        ws.append([f"الفترة: {result.period[0]:%d/%m/%Y} — {result.period[1]:%d/%m/%Y}"])
-    ws.append(
-        ["الخانة الحمراء الفارغة: غير مسجلة عند صاحبها — الصفراء: مبلغ مختلف — البرتقالية: للتأكد"]
-    )
+        wide(f"الفترة: {result.period[0]:%d/%m/%Y} — {result.period[1]:%d/%m/%Y}")
+    wide("الخانة الحمراء الفارغة: غير مسجلة عند صاحبها — الصفراء: مبلغ مختلف — البرتقالية: للتأكد")
     ws.append([])
     ws.append(list(heads))
     for cell in ws[ws.max_row]:
@@ -152,8 +157,7 @@ def build(result: Result) -> bytes:
     if gaps:  # the one total that means something: the amount gaps
         total = sum(abs((r.ours or 0) - (r.theirs or 0)) for r in gaps)
         ws.append([])
-        ws.append([f"مجموع فروق المبالغ ({len(gaps)} عملية): {total:,}"])
-        ws.cell(ws.max_row, 1).font = Font(bold=True, size=12)
+        wide(f"مجموع فروق المبالغ ({len(gaps)} عملية): {total:,}", 12)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()

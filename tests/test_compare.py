@@ -353,6 +353,7 @@ def test_one_file_for_both_parties_side_by_side_by_date():
     ]
     totals = [str(c) for r in values for c in r if "مجموع" in str(c)]
     assert totals == ["مجموع فروق المبالغ (1 عملية): 150"]  # the only total
+    assert "A1:I1" in {str(m) for m in ws.merged_cells.ranges}  # the title is never cut
     first = head + 2
     assert ws.cell(first, 6).fill.fgColor.rgb.endswith("F8CBAD")  # the missing cell is red
     assert ws.cell(first, 4).fill.fgColor.rgb in (None, "00000000")
