@@ -3,8 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import timedelta
 
-from binaa_reconciler.compare.engine import SIDE_AR, Kind, Line, Pair, Result, amount_text
+from binaa_reconciler.compare.engine import (
+    SIDE_AR,
+    Kind,
+    Line,
+    Pair,
+    Result,
+    amount_text,
+    mirror,
+)
+from binaa_reconciler.core.models import LedgerSide
 
 
 def title(result: Result) -> str:
@@ -73,19 +83,36 @@ def _where(result: Result) -> dict[str, str]:
     return out
 
 
-def same_amount(result: Result, line: Line, others: Sequence[Line], other: str) -> str:
-    """Every line of the other file with this amount, and what became of it:
-    why a line is alone although the other party has the same amount."""
-    where = _where(result)
-    found = sorted((x for x in others if x.amount == line.amount), key=lambda x: x.day)
-    if not found:
-        return f"لا توجد عند {other} أي عملية بالمبلغ {amount_text(line.amount)}"
-    parts = [
-        f"{x.day:%d/%m/%Y} {SIDE_AR[x.side]}: {where.get(x.key, 'خارج الفترة المختارة')}"
-        for x in found[:6]
-    ]
-    more = f" (+{len(found) - 6})" if len(found) > 6 else ""
-    return f"نفس المبلغ عند {other}: " + " | ".join(parts) + more
+def same_amount(
+    result: Result, line: Line, mine: Sequence[Line], others: Sequence[Line], i: int
+) -> str:
+    """One short conclusion under a line alone on side i: how many times this
+    amount appears on each side around its date (15 days before and after),
+    and whether the other side's ones are all taken by other matches."""
+    me, other = result.names[i], result.names[1 - i]
+    near = [line.day - timedelta(days=15), line.day + timedelta(days=15)]
+
+    def around(lines: Sequence[Line], side: LedgerSide) -> list[Line]:
+        return [
+            x
+            for x in lines
+            if x.amount == line.amount and x.side is side and near[0] <= x.day <= near[1]
+        ]
+
+    ours = around(mine, line.side)
+    theirs = around(others, mirror(line.side))
+    amount = amount_text(line.amount)
+    span = f"بين {near[0]:%d/%m} و{near[1]:%d/%m}"
+    if not theirs:
+        return f"المبلغ {amount} غير موجود عند {other} {span}"
+    taken = {k for x, y in result.matched for k in (x.key, y.key)}
+    taken |= {x.key for p in result.confirmed for x in p.lines}
+    free = [x for x in theirs if x.key not in taken]
+    count = f"المبلغ {amount} {span}: عند {me} {len(ours)} مرة، وعند {other} {len(theirs)} مرة"
+    if not free:
+        return f"{count} — كلها مطابقة، فعند {me} عملية زائدة أو عند {other} عملية ناقصة"
+    days = "، ".join(f"{x.day:%d/%m}" for x in free[:3])
+    return f"{count} — غير المطابقة عند {other}: {days}"
 
 
 def reason(pair: Pair, names: tuple[str, str]) -> str:

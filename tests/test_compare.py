@@ -366,15 +366,21 @@ def test_a_line_settled_by_hand_leaves_the_list_and_is_remembered():
 def test_why_a_line_is_alone_although_the_other_side_has_the_same_amount():
     from binaa_reconciler.compare.texts import same_amount
 
-    a = [line("A1", 20, D, 3_402)]
-    b = [line("B1", 21, C, 3_402), line("B2", 5, C, 3_402), line("B3", 9, C, 77)]
+    a = [line("A1", 14, D, 3_402), line("A2", 16, D, 3_402)]
+    b = [
+        line("B1", 14, C, 3_402),
+        line("B2", 16, C, 3_402),
+        line("B3", 15, C, 3_402),  # one more at clinique
+        line("B4", 9, C, 77),
+    ]
     r = run(a, b)
-    (alone,) = [x for x in r.only[1] if x.amount == 340_200]  # B2: A1 went to B1
-    assert same_amount(r, alone, a, "binaa") == (
-        "نفس المبلغ عند binaa: 20/09/2026 مدين: مطابقة مع clinique 21/09"
+    (alone,) = [x for x in r.only[1] if x.amount == 340_200]
+    assert same_amount(r, alone, b, a, 1) == (
+        "المبلغ 3,402 بين 31/08 و30/09: عند clinique 3 مرة، وعند binaa 2 مرة"
+        " — كلها مطابقة، فعند clinique عملية زائدة أو عند binaa عملية ناقصة"
     )
-    (other,) = [x for x in r.only[1] if x.key == "B3"]
-    assert same_amount(r, other, a, "binaa") == "لا توجد عند binaa أي عملية بالمبلغ 77"
+    (other,) = [x for x in r.only[1] if x.key == "B4"]
+    assert same_amount(r, other, b, a, 1) == "المبلغ 77 غير موجود عند binaa بين 25/08 و24/09"
 
 
 def test_a_delivery_note_number_written_twice_in_one_file_is_pointed_out():

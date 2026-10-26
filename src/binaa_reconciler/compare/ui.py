@@ -321,8 +321,8 @@ class CompareApp(tk.Tk):
         if line is None:
             text.set("")
             return
-        others = self.sources[1 - i].lines
-        text.set(same_amount(self.result, line, others, self.result.names[1 - i]))
+        mine, others = self.sources[i].lines, self.sources[1 - i].lines
+        text.set(same_amount(self.result, line, mine, others, i))
 
     def settle(self, i: int) -> None:
         """✔ the selected lines of side i were settled by hand (corrected in
