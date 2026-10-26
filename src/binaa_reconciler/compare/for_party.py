@@ -4,8 +4,9 @@ One right-to-left sheet, sorted by date, one numbered line per operation to
 settle: the amount as each party has it side by side (an empty, red cell is
 what is missing in that party's books; two different amounts are yellow; a
 possible pair is orange), «لكم» / «عليكم» for the other party, and an empty
-«الرد» column to fill in during the call. No totals: the two files rarely
-start and end on the same day. Nothing else of our books.
+«الرد» column to fill in during the call. No other totals: the two files rarely
+start and end on the same day; only the amount gaps are added up. Nothing
+else of our books.
 """
 
 from __future__ import annotations
@@ -137,6 +138,12 @@ def build(result: Result) -> bytes:
         for cell in line[3:5]:
             cell.number_format = MONEY
             cell.fill = r.fill if (r.fill is not RED or cell.value is None) else PatternFill()
+    gaps = [r for r in rows(result) if r.fill is YELLOW]
+    if gaps:  # the one total that means something: the amount gaps
+        total = sum(abs((r.ours or 0) - (r.theirs or 0)) for r in gaps)
+        ws.append([])
+        ws.append([f"مجموع فروق المبالغ ({len(gaps)} عملية): {total:,}"])
+        ws.cell(ws.max_row, 1).font = Font(bold=True, size=12)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()

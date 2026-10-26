@@ -330,7 +330,7 @@ def test_one_file_for_both_parties_side_by_side_by_date():
     head = values.index(
         ("رقم", "التاريخ", "البيان", "عند بناء", "عند كلينك", "لكم / عليكم", "ملاحظة", "الرد")
     )
-    lines = [(r[0], r[1].day, r[3], r[4], r[5], r[6]) for r in values[head + 1 :]]
+    lines = [(r[0], r[1].day, r[3], r[4], r[5], r[6]) for r in values[head + 1 :] if r[1]]
     assert lines == [
         (1, 3, 500, None, "عليكم", None),  # missing at clinique
         (2, 4, 200, None, "لكم", None),
@@ -339,7 +339,8 @@ def test_one_file_for_both_parties_side_by_side_by_date():
         (5, 9, None, 30, "عليكم", None),
         (6, 10, 4_000, 4_000, "عليكم", "قد تكون نفس العملية — فرق 10 يوم في التاريخ"),
     ]
-    assert not any("مجموع" in str(c) for r in values for c in r)  # no totals
+    totals = [str(c) for r in values for c in r if "مجموع" in str(c)]
+    assert totals == ["مجموع فروق المبالغ (1 عملية): 150"]  # the only total
     first = head + 2
     assert ws.cell(first, 5).fill.fgColor.rgb.endswith("F8CBAD")  # the missing cell is red
     assert ws.cell(first, 4).fill.fgColor.rgb in (None, "00000000")
