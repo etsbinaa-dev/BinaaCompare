@@ -194,7 +194,7 @@ def test_an_unreadable_file_is_a_message_not_a_crash():
     assert load(b"not an excel file", "A").error is not None
 
 
-def test_manual_export_drops_matched_rows_and_keeps_the_original_columns():
+def test_manual_export_drops_matched_rows_and_groups_what_is_owed():
     a = load(
         _xlsx(
             [
@@ -202,6 +202,7 @@ def test_manual_export_drops_matched_rows_and_keeps_the_original_columns():
                 (2, date(2026, 9, 14), 900, "SYN BIM"),  # split: two rows, kept together
                 (None, "OD-2", 0, 1870, 0, 0),
                 (3, date(2026, 9, 15), 900, "SYN seul", "OD-3", 0, 777, 0),
+                (4, date(2026, 9, 16), 900, "SYN livre", "OD-4", 900, 0, 0),
             ]
         ),
         "A",
@@ -212,14 +213,18 @@ def test_manual_export_drops_matched_rows_and_keeps_the_original_columns():
     assert wb.sheetnames == ["بناء", "كلينك"]  # Arabic names: no broken sentence
     rows = [tuple(r) for r in wb["بناء"].iter_rows(values_only=True)]
     assert rows[0][:3] == ("N°", "Date", "Compte") and rows[0][8] == "الحالة"
-    assert [r[0] for r in rows[1:]] == [2, None, 3]  # row 1 (matched) is gone
-    plain = [str(r[8]).replace("\u200f", "") for r in rows]
-    assert plain[1] == "عند بناء فقط"
-    assert plain[3].startswith("عند بناء فقط\nبعد آخر عملية في ملف كلينك")
-    assert rows[2][8] is None and rows[2][1] == "OD-2"  # the 2nd row, unchanged
-    assert len(rows[0]) == 9  # no suggested-correction column
-    assert rows[3][5:7] == (None, 777)  # the empty side (0 in RIM-Soft) stays empty
-    assert wb["بناء"]["A2"].fill.fgColor.rgb.endswith("F8CBAD")
+    plain = [[str(c).replace("\u200f", "") for c in r] for r in rows]
+    # owed by clinique first (debit), then owed to it (credit); row 1 (matched) gone
+    assert plain[1][0] == "على كلينك — عند بناء فقط — 1 عملية — المجموع 900"
+    assert rows[2][0] == 4
+    assert plain[3][0] == "لكلينك — عند بناء فقط — 2 عملية — المجموع 2,647"
+    assert [r[0] for r in rows[4:]] == [2, None, 3]
+    assert plain[4][8] == "عند بناء فقط"
+    assert rows[5][8] is None and rows[5][1] == "OD-2"  # the 2nd row, with its operation
+    assert plain[6][8].startswith("عند بناء فقط\nبعد آخر عملية في ملف كلينك")
+    assert len(rows[0]) == 9  # one status column
+    assert rows[6][5:7] == (None, 777)  # the empty side (0 in RIM-Soft) stays empty
+    assert wb["بناء"]["A3"].fill.fgColor.rgb.endswith("F8CBAD")
     assert [r[0] for r in wb["كلينك"].iter_rows(values_only=True)] == ["N°"]
 
 
@@ -260,8 +265,8 @@ def test_manual_export_writes_dates_even_when_the_file_has_serial_numbers():
     b = load(_xlsx([(1, date(2026, 9, 20), 411, "SYN autre", "X-1", 0, 5, 0)]), "B")
     result = compare(a.lines, b.lines, ("binaa", "clinique"), (d(1), d(30)))
     ws = load_workbook(io.BytesIO(manual.build(result, a, b)))["بناء"]
-    assert ws["B2"].value.date() == date(2026, 9, 14) and ws["B2"].number_format == "DD/MM/YYYY"
-    assert ws["I2"].alignment.wrap_text and ws["I2"].alignment.readingOrder == 2
+    assert ws["B3"].value.date() == date(2026, 9, 14) and ws["B3"].number_format == "DD/MM/YYYY"
+    assert ws["I3"].alignment.wrap_text and ws["I3"].alignment.readingOrder == 2
 
 
 def test_the_same_amount_alone_on_both_sides_is_pointed_out():

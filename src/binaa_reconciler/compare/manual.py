@@ -29,6 +29,7 @@ from binaa_reconciler.compare.engine import (
 )
 from binaa_reconciler.compare.files import Loaded
 from binaa_reconciler.compare.texts import reason
+from binaa_reconciler.core.models import LedgerSide
 
 RED = PatternFill("solid", fgColor="F8CBAD")
 ORANGE = PatternFill("solid", fgColor="FCE4D6")
@@ -102,22 +103,48 @@ def statuses(result: Result, i: int) -> tuple[set[int], dict[int, tuple[str, Pat
     return matched, status
 
 
+def _owed(side: LedgerSide, other: str) -> str:
+    """In a party's own statement: debit = owed by the other party, credit =
+    owed to it."""
+    return f"على {other}" if side is LedgerSide.DEBIT else f"ل{other}"
+
+
 def _copy_sheet(target: Worksheet, loaded: Loaded, result: Result, i: int) -> None:
     source_wb = load_workbook(BytesIO(loaded.data), data_only=True)
     source = source_wb.worksheets[loaded.sheet_index]
     matched, status = statuses(result, i)
-    transaction_rows = {x.row for x in loaded.lines}
-    days = {x.row: x.day for x in loaded.lines}  # the dates as read (not serials)
+    other = arabic(result.names[1 - i])
+    lines = {x.row: x for x in loaded.lines}
     second_rows = {v: k for k, v in loaded.continuation.items()}  # 2nd row -> 1st
+    rows = list(source.iter_rows())
     width = source.max_column
     status_col = width + 1
+
+    # the remaining operations, grouped: what is owed by the other party, what
+    # is owed to it (each alone on this side), then the amount gaps, the
+    # possible pairs and what is outside the period; the file order inside
+    groups: dict[str, list[int]] = {}
+    for n in range(loaded.header_row + 1, len(rows) + 1):
+        x = lines.get(n)
+        if x is None or n in matched:
+            continue  # matched, a 2nd row (follows its operation) or a total line
+        fill = status.get(n, ("", GREY))[1]
+        if fill is RED:
+            title = f"{_owed(x.side, other)} — عند {arabic(result.names[i])} فقط"
+        else:
+            title = {YELLOW: "فرق في المبلغ", ORANGE: "قد تكون نفس العملية"}.get(
+                fill, "خارج الفترة المختارة"
+            )
+        groups.setdefault(title, []).append(n)
+    order = [f"على {other}", f"ل{other}", "فرق", "قد تكون", "خارج"]
+    titles = sorted(groups, key=lambda t: next(k for k, o in enumerate(order) if t.startswith(o)))
+
     out = 0
-    for n, row in enumerate(source.iter_rows(), start=1):
-        first = second_rows.get(n, n)  # a 2nd row follows its operation
-        if n > loaded.header_row and (first not in transaction_rows or first in matched):
-            continue  # matched (or a total / balance line: no longer right)
+
+    def copy_row(n: int) -> None:
+        nonlocal out
         out += 1
-        for cell in row:
+        for cell in rows[n - 1]:
             value: Any = cell.value
             new = target.cell(out, cell.column or 1, value)
             if cell.has_style:
@@ -125,22 +152,34 @@ def _copy_sheet(target: Worksheet, loaded: Loaded, result: Result, i: int) -> No
                 new.font = copy(cell.font)
             if isinstance(value, datetime | date):
                 new.number_format = DATE_FORMAT
-        if n in days and loaded.date_col is not None:  # never a bare number
-            target.cell(out, loaded.date_col + 1, days[n]).number_format = DATE_FORMAT
+        first = second_rows.get(n, n)
+        if n in lines and loaded.date_col is not None:  # never a bare number
+            target.cell(out, loaded.date_col + 1, lines[n].day).number_format = DATE_FORMAT
         if n > loaded.header_row:  # amounts: 1,216,000; the empty side stays empty
             for col in loaded.amount_cols:
                 cell = target.cell(out, col + 1)
                 if isinstance(cell.value, int | float):
                     cell.value = cell.value or None
                     cell.number_format = "#,##0"
-        if n == loaded.header_row:
-            target.cell(out, status_col, "الحالة").font = Font(bold=True)
-        elif n > loaded.header_row:
             text, fill = status.get(first, ("خارج الفترة المختارة", GREY))
             if n == first:
                 target.cell(out, status_col, _rtl(text)).alignment = WRAP
             for col in range(1, status_col + 1):
                 target.cell(out, col).fill = fill
+
+    for n in range(1, loaded.header_row + 1):
+        copy_row(n)
+    target.cell(out, status_col, "الحالة").font = Font(bold=True)
+    for title in titles:
+        members = groups[title]
+        total = sum(lines[n].amount for n in members)
+        out += 1
+        head = f"{title} — {len(members)} عملية — المجموع {amount_text(total)}"
+        target.cell(out, 1, RLM + head).font = Font(bold=True, size=12)
+        for n in members:
+            copy_row(n)
+            if (second := loaded.continuation.get(n)) is not None:
+                copy_row(second)
     for col in range(1, width + 1):
         letter = get_column_letter(col)
         target.column_dimensions[letter].width = source.column_dimensions[letter].width or 14
