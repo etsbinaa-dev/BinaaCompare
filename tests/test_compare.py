@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from openpyxl import Workbook, load_workbook
 
@@ -327,36 +327,34 @@ def test_one_file_for_both_parties_side_by_side_by_date():
     ws = load_workbook(io.BytesIO(for_party.build(r))).active
     assert ws.title == "بناء وكلينك" and ws.sheet_view.rightToLeft
     values = [tuple(r) for r in ws.iter_rows(values_only=True)]
-    head = values.index(
-        (
-            "رقم",
-            "التاريخ",
-            "بيان بناء",
-            "عند بناء",
-            "بيان كلينك",
-            "عند كلينك",
-            "لصالح",
-            "ملاحظة",
-            "الرد",
-        )
+    heads = (
+        "التاريخ",
+        "بيان بناء",
+        "عند بناء",
+        "بيان كلينك",
+        "عند كلينك",
+        "لصالح",
+        "ملاحظة",
+        "الرد",
     )
-    lines = [(r[0], r[1].day, r[3], r[5], r[6], r[7]) for r in values[head + 1 :] if r[1]]
-    pair = values[head + 3]  # both descriptions on a line found on both sides
-    assert (pair[2], pair[4]) == ("SYN", "SYN")
+    head = values.index(heads)
+    body = [r for r in values[head + 1 :] if isinstance(r[0], datetime)]
+    lines = [(r[0].day, r[2], r[4], r[5], r[6]) for r in body]
+    assert (body[2][1], body[2][3]) == ("SYN", "SYN")  # both descriptions on a pair
     assert lines == [
-        (1, 3, 500, None, "لصالح بناء", None),  # missing at clinique
-        (2, 4, 200, None, "لصالح كلينك", None),
-        (3, 6, 10_000, 10_150, "لصالح بناء", "فرق 150"),
-        (4, 8, None, 70, "لصالح كلينك", None),  # missing at binaa
-        (5, 9, None, 30, "لصالح بناء", None),
-        (6, 10, 4_000, 4_000, "لصالح بناء", "قد تكون نفس العملية — فرق 10 يوم في التاريخ"),
+        (3, 500, None, "لصالح بناء", None),  # missing at clinique
+        (4, 200, None, "لصالح كلينك", None),
+        (6, 10_000, 10_150, "لصالح بناء", "فرق 150"),
+        (8, None, 70, "لصالح كلينك", None),  # missing at binaa
+        (9, None, 30, "لصالح بناء", None),
+        (10, 4_000, 4_000, "لصالح بناء", "قد تكون نفس العملية — فرق 10 يوم في التاريخ"),
     ]
     totals = [str(c) for r in values for c in r if "مجموع" in str(c)]
     assert totals == ["مجموع فروق المبالغ (1 عملية): 150"]  # the only total
-    assert "A1:I1" in {str(m) for m in ws.merged_cells.ranges}  # the title is never cut
+    assert "A1:H1" in {str(m) for m in ws.merged_cells.ranges}  # the title is never cut
     first = head + 2
-    assert ws.cell(first, 6).fill.fgColor.rgb.endswith("F8CBAD")  # the missing cell is red
-    assert ws.cell(first, 4).fill.fgColor.rgb in (None, "00000000")
+    assert ws.cell(first, 5).fill.fgColor.rgb.endswith("F8CBAD")  # the missing cell is red
+    assert ws.cell(first, 3).fill.fgColor.rgb in (None, "00000000")
 
 
 def test_a_line_settled_by_hand_leaves_the_list_and_is_remembered():

@@ -1,6 +1,6 @@
 """One file for both parties, open on both screens during the phone call.
 
-One right-to-left sheet, sorted by date, one numbered line per operation to
+One right-to-left sheet, sorted by date, one line per operation to
 settle: the amount as each party has it side by side (an empty, red cell is
 what is missing in that party's books; two different amounts are yellow; a
 possible pair is orange), in whose favour it is («لصالح بناء»: clear for
@@ -115,7 +115,6 @@ def build(result: Result) -> bytes:
     ws.title = f"{us} و{them}"[:31]
     ws.sheet_view.rightToLeft = True
     heads = (
-        "رقم",
         "التاريخ",
         f"بيان {us}",
         f"عند {us}",
@@ -125,13 +124,13 @@ def build(result: Result) -> bytes:
         "ملاحظة",
         "الرد",
     )
-    for col, width in zip("ABCDEFGHI", (6, 12, 28, 13, 28, 13, 14, 26, 18), strict=True):
+    for col, width in zip("ABCDEFGH", (12, 28, 13, 28, 13, 14, 26, 18), strict=True):
         ws.column_dimensions[col].width = width
 
     def wide(text: str, size: int = 11) -> None:
         """A line of text across the whole table (never cut by a narrow column)."""
         ws.append([text])
-        ws.merge_cells(start_row=ws.max_row, start_column=1, end_row=ws.max_row, end_column=9)
+        ws.merge_cells(start_row=ws.max_row, start_column=1, end_row=ws.max_row, end_column=8)
         ws.cell(ws.max_row, 1).font = Font(bold=size > 11, size=size)
         ws.cell(ws.max_row, 1).alignment = Alignment(horizontal="right", readingOrder=2)
 
@@ -144,13 +143,13 @@ def build(result: Result) -> bytes:
     for cell in ws[ws.max_row]:
         cell.font, cell.fill, cell.alignment, cell.border = Font(bold=True), HEAD, CELL, BOX
     ws.freeze_panes = f"A{ws.max_row + 1}"
-    for n, r in enumerate(rows(result), start=1):
-        ws.append([n, r.day, r.our_label, r.ours, r.their_label, r.theirs, r.owed, r.note, None])
+    for r in rows(result):
+        ws.append([r.day, r.our_label, r.ours, r.their_label, r.theirs, r.owed, r.note, None])
         line = ws[ws.max_row]
         for cell in line:
             cell.alignment, cell.border = CELL, BOX
-        line[1].number_format = "DD/MM/YYYY"
-        for cell in (line[3], line[5]):
+        line[0].number_format = "DD/MM/YYYY"
+        for cell in (line[2], line[4]):
             cell.number_format = MONEY
             cell.fill = r.fill if (r.fill is not RED or cell.value is None) else PatternFill()
     gaps = [r for r in rows(result) if r.fill is YELLOW]
