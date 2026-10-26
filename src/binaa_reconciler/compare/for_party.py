@@ -1,7 +1,8 @@
 """A short file to send to the other party: only what concerns them.
 
 One right-to-left sheet, written from their point of view («عليكم» / «لكم»):
-what we recorded and they did not, the amount gaps, and what they recorded
+what we recorded and they did not, the amount gaps, the possible pairs to
+confirm together, and what they recorded
 that we could not find. Nothing else of our books; written only where the
 user chooses.
 """
@@ -14,8 +15,9 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from binaa_reconciler.compare.engine import Line, Result, units
+from binaa_reconciler.compare.engine import Line, Pair, Result, units
 from binaa_reconciler.compare.manual import arabic
+from binaa_reconciler.compare.texts import reason
 from binaa_reconciler.core.models import LedgerSide
 
 HEAD = PatternFill("solid", fgColor="D9E1F2")
@@ -28,6 +30,13 @@ def _for_them(x: Line, ours: bool) -> str:
     them; in theirs a debit is owed by us."""
     owed_by_them = (x.side is LedgerSide.DEBIT) == ours
     return "عليكم" if owed_by_them else "لكم"
+
+
+def _arabic_reason(pair: Pair, result: Result) -> str:
+    text = reason(pair, result.names)
+    for name in result.names:
+        text = text.replace(name, arabic(name))
+    return text
 
 
 def build(result: Result) -> bytes:
@@ -75,6 +84,22 @@ def build(result: Result) -> bytes:
                 f"عندنا {sum(units(x.amount) for x in pair.a):,}",
             ]
             for pair in result.close
+        ],
+    )
+    section(
+        "قد تكون نفس العملية — تحتاج تأكيدًا",
+        [
+            [
+                pair.b[0].day,
+                " / ".join(x.label for x in pair.b if x.label),
+                units(sum(x.amount for x in pair.b)),
+                _for_them(pair.b[0], ours=False),
+                "عندنا: "
+                + " + ".join(f"{x.day:%d/%m} {units(x.amount):,}" for x in pair.a)
+                + f" — {_arabic_reason(pair, result)}",
+            ]
+            for pair in result.possible
+            if pair.a and pair.b  # a reversal inside one file is not theirs to check
         ],
     )
     section(

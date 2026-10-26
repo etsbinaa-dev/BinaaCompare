@@ -311,8 +311,18 @@ def test_a_row_without_amount_before_a_real_operation_is_not_merged():
 
 def test_the_file_for_the_other_party_has_only_what_concerns_them():
     r = run(
-        [line("A1", 3, D, 500), line("A2", 4, C, 200), line("A3", 6, D, 10_000)],
-        [line("B1", 6, C, 10_150), line("B2", 8, D, 70), line("B3", 9, C, 30)],
+        [
+            line("A1", 3, D, 500),
+            line("A2", 4, C, 200),
+            line("A3", 6, D, 10_000),
+            line("A4", 10, D, 4_000),
+        ],
+        [
+            line("B1", 6, C, 10_150),
+            line("B2", 8, D, 70),
+            line("B3", 9, C, 30),
+            line("B4", 20, C, 4_000),
+        ],
     )
     ws = load_workbook(io.BytesIO(for_party.build(r))).active
     assert ws.title == "كلينك" and ws.sheet_view.rightToLeft
@@ -324,5 +334,11 @@ def test_the_file_for_the_other_party_has_only_what_concerns_them():
     assert [(r[2], r[3]) for r in rows[i + 2 : i + 4]] == [(500, "عليكم"), (200, "لكم")]
     i = text.index("مسجّلة عند الطرفين بمبلغ مختلف (1)")
     assert rows[i + 2][2:] == (10_150, "عليكم", "عندنا 10,000")
+    i = text.index("قد تكون نفس العملية — تحتاج تأكيدًا (1)")
+    assert rows[i + 2][2:] == (
+        4_000,
+        "عليكم",
+        "عندنا: 10/09 4,000 — نفس المبلغ — فرق 10 يوم في التاريخ",
+    )
     i = text.index("سجّلتموها عندكم ولم نجدها عندنا (2)")
     assert [(r[2], r[3]) for r in rows[i + 2 : i + 4]] == [(70, "لكم"), (30, "عليكم")]
