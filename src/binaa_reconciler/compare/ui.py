@@ -16,7 +16,7 @@ from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from binaa_reconciler.compare import manual, memory
+from binaa_reconciler.compare import for_party, manual, memory
 from binaa_reconciler.compare.engine import (
     SIDE_AR,
     Result,
@@ -187,6 +187,10 @@ class CompareApp(tk.Tk):
         ttk.Entry(actions, textvariable=self.to_var, width=11, justify="center").pack(side="right")
         self.manual_button = ttk.Button(actions, text="تصدير Excel", command=self.export_manual)
         self.manual_button.pack(side="left")
+        self.party_button = ttk.Button(
+            actions, text="ملف للطرف الثاني", command=self.export_for_party
+        )
+        self.party_button.pack(side="left", padx=(0, 6))
 
         self.headline_var = tk.StringVar()
         self.note_var = tk.StringVar()
@@ -358,6 +362,7 @@ class CompareApp(tk.Tk):
         ready = self.box_a.loaded is not None and self.box_b.loaded is not None
         self.compare_button.state(["!disabled"] if ready else ["disabled"])
         self.manual_button.state(["!disabled"] if self.result is not None else ["disabled"])
+        self.party_button.state(["!disabled"] if self.result is not None else ["disabled"])
         for button in self.undo_buttons:
             button.state(["!disabled"] if self.decisions else ["disabled"])
 
@@ -470,6 +475,22 @@ class CompareApp(tk.Tk):
             self.totals[i].set(total_text(result, i))
         for tree in (*self.pair_trees.values(), *self.trees):
             self.sort(tree, "", again=True)  # keep the order the user chose
+
+    def export_for_party(self) -> Path | None:
+        """A short file for the other party: only what concerns them."""
+        if self.result is None:
+            return None
+        other = manual.arabic(self.result.names[1])
+        target = self.dialogs.ask_save(f"للإرسال إلى {other}.xlsx")
+        if target is None:
+            return None
+        try:
+            for_party.save(self.result, target)
+        except OSError:
+            self.dialogs.error("تعذّر الحفظ", "أغلق الملف إن كان مفتوحًا في Excel ثم أعد المحاولة")
+            return None
+        self.dialogs.open_file(target)
+        return target
 
     def export_manual(self) -> Path | None:
         """The two original files without the matched operations, with a status

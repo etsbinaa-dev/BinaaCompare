@@ -7,7 +7,7 @@ from datetime import date, timedelta
 
 from openpyxl import Workbook, load_workbook
 
-from binaa_reconciler.compare import manual, memory
+from binaa_reconciler.compare import for_party, manual, memory
 from binaa_reconciler.compare.engine import Line, amount_text, compare
 from binaa_reconciler.compare.excel import build
 from binaa_reconciler.compare.files import load
@@ -307,3 +307,22 @@ def test_a_row_without_amount_before_a_real_operation_is_not_merged():
     )
     assert [x.amount for x in loaded.lines] == [90_000] and loaded.merged == 0
     assert len(loaded.problems) == 1
+
+
+def test_the_file_for_the_other_party_has_only_what_concerns_them():
+    r = run(
+        [line("A1", 3, D, 500), line("A2", 4, C, 200), line("A3", 6, D, 10_000)],
+        [line("B1", 6, C, 10_150), line("B2", 8, D, 70), line("B3", 9, C, 30)],
+    )
+    ws = load_workbook(io.BytesIO(for_party.build(r))).active
+    assert ws.title == "كلينك" and ws.sheet_view.rightToLeft
+    rows = [r for r in ws.iter_rows(values_only=True) if any(c is not None for c in r)]
+    text = [str(r[0]) for r in rows]
+    assert text[0] == "مقارنة الحساب بين بناء وكلينك"
+    # what we have and they do not, seen by them: our debit = owed by them
+    i = text.index("سجّلناها عندنا ولم نجدها عندكم — هل سجلتموها؟ (2)")
+    assert [(r[2], r[3]) for r in rows[i + 2 : i + 4]] == [(500, "عليكم"), (200, "لكم")]
+    i = text.index("مسجّلة عند الطرفين بمبلغ مختلف (1)")
+    assert rows[i + 2][2:] == (10_150, "عليكم", "عندنا 10,000")
+    i = text.index("سجّلتموها عندكم ولم نجدها عندنا (2)")
+    assert [(r[2], r[3]) for r in rows[i + 2 : i + 4]] == [(70, "لكم"), (30, "عليكم")]

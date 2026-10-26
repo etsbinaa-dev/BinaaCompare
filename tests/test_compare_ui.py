@@ -109,6 +109,8 @@ def test_two_files_one_button_two_lists(files, tmp_path):
         assert target is not None and target.exists()
         assert load_workbook(io.BytesIO(target.read_bytes())).sheetnames == ["بناء", "كلينك"]
         assert app.dialogs.calls[-1] == ("open", "out.xlsx")  # opened after saving
+        assert app.export_for_party() == target  # the short file for the other party
+        assert load_workbook(io.BytesIO(target.read_bytes())).sheetnames == ["كلينك"]
     finally:
         app.destroy()
 
