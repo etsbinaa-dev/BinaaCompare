@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from openpyxl import Workbook, load_workbook
 
@@ -328,33 +328,38 @@ def test_one_file_for_both_parties_side_by_side_by_date():
     assert ws.title == "بناء وكلينك" and ws.sheet_view.rightToLeft
     values = [tuple(r) for r in ws.iter_rows(values_only=True)]
     heads = (
-        "التاريخ",
+        "تاريخ بناء",
         "بيان بناء",
-        "عند بناء",
+        "مبلغ بناء",
+        "تاريخ كلينك",
         "بيان كلينك",
-        "عند كلينك",
-        "لصالح",
+        "مبلغ كلينك",
         "ملاحظة",
         "الرد",
     )
     head = values.index(heads)
-    body = [r for r in values[head + 1 :] if isinstance(r[0], datetime)]
-    lines = [(r[0].day, r[2], r[4], r[5], r[6]) for r in body]
-    assert (body[2][1], body[2][3]) == ("SYN", "SYN")  # both descriptions on a pair
-    assert lines == [
-        (3, 500, None, "لصالح بناء", None),  # missing at clinique
-        (4, 200, None, "لصالح كلينك", None),
-        (6, 10_000, 10_150, "لصالح بناء", "فرق 150"),
-        (8, None, 70, "لصالح كلينك", None),  # missing at binaa
-        (9, None, 30, "لصالح بناء", None),
-        (10, 4_000, 4_000, "لصالح بناء", "قد تكون نفس العملية — فرق 10 يوم في التاريخ"),
+    body = [r for r in values[head + 1 :] if r[0] or r[3]]
+    assert [(r[0], r[2], r[3], r[5], r[6]) for r in body[:-1]] == [
+        ("03/09/2026", 500, None, None, "ناقصة عند كلينك — لصالح بناء"),
+        ("04/09/2026", 200, None, None, "ناقصة عند كلينك — لصالح كلينك"),
+        # each party finds its own date and amount in its own books
+        ("06/09/2026", 10_000, "06/09/2026", 10_150, "فرق في المبلغ: 150"),
+        (None, None, "08/09/2026", 70, "ناقصة عند بناء — لصالح كلينك"),
+        (None, None, "09/09/2026", 30, "ناقصة عند بناء — لصالح بناء"),
+        ("10/09/2026", 4_000, "20/09/2026", 4_000, "قد تكون نفس العملية — بتاريخ مختلف"),
     ]
-    totals = [str(c) for r in values for c in r if "مجموع" in str(c)]
-    assert totals == ["مجموع فروق المبالغ (1 عملية): 150"]  # the only total
+    assert body[-1][0] == "مجموع فروق المبالغ (1 عملية): 150"  # the only total
     assert "A1:H1" in {str(m) for m in ws.merged_cells.ranges}  # the title is never cut
     first = head + 2
-    assert ws.cell(first, 5).fill.fgColor.rgb.endswith("F8CBAD")  # the missing cell is red
-    assert ws.cell(first, 3).fill.fgColor.rgb in (None, "00000000")
+    assert ws.cell(first, 5).fill.fgColor.rgb.endswith("F8CBAD")  # the missing side is red
+    assert ws.cell(first, 2).fill.fgColor.rgb in (None, "00000000")
+
+
+def test_a_sum_shows_each_amount_to_find_it_in_rimsoft():
+    r = run([line("A1", 12, D, 1_200), line("A2", 12, D, 800)], [line("B1", 12, C, 2_000)])
+    ws = load_workbook(io.BytesIO(for_party.build(r))).active
+    (row,) = [r for r in ws.iter_rows(values_only=True) if r[6] and "مجموع عدة" in str(r[6])]
+    assert row[2] == "1,200 + 800" and row[5] == 2_000
 
 
 def test_a_line_settled_by_hand_leaves_the_list_and_is_remembered():
