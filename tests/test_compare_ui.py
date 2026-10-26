@@ -215,3 +215,25 @@ def test_the_files_of_last_time_are_opened_again(files, tmp_path):
                 assert app.dialogs.last == files[0].resolve()
         finally:
             app.destroy()
+
+
+def test_the_match_button_stays_visible_on_a_small_screen(files, tmp_path):
+    try:
+        app = CompareApp(FakeDialogs(files, tmp_path / "out.xlsx"))
+    except Exception as exc:  # no display
+        pytest.skip(f"Tk cannot open a window here: {type(exc).__name__}")
+    try:
+        app.state("normal")
+        app.geometry("760x520")
+        app.box_a.choose()
+        app.box_b.choose()
+        app.compare_button.invoke()
+        app.note_var.set("\n".join(["سطر ملاحظة طويل"] * 6))  # many notes above the lists
+        app.tabs.select(app.pair_frames["possible"])
+        app.update()
+        button = app.match_buttons["possible"]
+        bottom = button.winfo_rooty() + button.winfo_height()
+        assert button.winfo_ismapped() and button.winfo_height() > 10
+        assert bottom <= app.winfo_rooty() + app.winfo_height()
+    finally:
+        app.destroy()

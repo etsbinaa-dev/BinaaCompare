@@ -206,6 +206,7 @@ class CompareApp(tk.Tk):
         self.pair_frames: dict[str, ttk.Frame] = {}
         self.sorted_by: dict[str, tuple[str, bool]] = {}  # tree -> (column, descending)
         self.undo_buttons: list[ttk.Button] = []
+        self.match_buttons: dict[str, ttk.Button] = {}
         # ✓ / ✗ in order (the last is undone first), saved on this computer after
         # each one; read back the first time the two files are compared
         self.decisions: list[memory.Decision] = []
@@ -216,14 +217,16 @@ class CompareApp(tk.Tk):
             self.tabs.add(frame, text="")
             tree = self._tree(frame, PAIR_COLUMNS, PAIR_WIDTHS, stretch=(2, 5, 7))
             tree.bind("<Double-1>", partial(self._double_click, kind))
-            buttons = ttk.Frame(frame)
-            buttons.pack(fill="x", pady=(6, 0))
-            ttk.Button(
+            buttons = ttk.Frame(frame)  # at the bottom: never pushed off a small screen
+            buttons.pack(side="bottom", fill="x", pady=(6, 0))
+            match = ttk.Button(
                 buttons,
                 text="✓ مطابقة",
                 style="Big.TButton",
                 command=partial(self.decide, kind, True),
-            ).pack(side="right")
+            )
+            match.pack(side="right")
+            self.match_buttons[kind] = match
             ttk.Button(buttons, text="✗ ليست هي", command=partial(self.decide, kind, False)).pack(
                 side="right", padx=8
             )
@@ -235,10 +238,11 @@ class CompareApp(tk.Tk):
                 "اختر سطرًا ثم «مطابقة» (أو اضغط عليه مرتين) — يختفي وينتقل إلى المتطابقة",
                 foreground=GREY,
             ).pack(side="right", padx=8)
-            self._details(frame, tree)
             if kind == "close":  # the reason is always "a different amount": not shown
                 tree.configure(displaycolumns=[f"c{k}" for k in range(6, -1, -1)])
-                label(frame, textvariable=self.close_total, font=BIG).pack(fill="x")
+                label(frame, textvariable=self.close_total, font=BIG).pack(side="bottom", fill="x")
+            self._details(frame, tree)
+            self._list_last(tree)
             self.pair_trees[kind] = tree
             self.pair_frames[kind] = frame
         self.frames: list[ttk.Frame] = []
@@ -248,19 +252,29 @@ class CompareApp(tk.Tk):
             frame = ttk.Frame(self.tabs, padding=6)
             self.tabs.add(frame, text="")
             tree = self._tree(frame, COLUMNS, WIDTHS, stretch=(3, 5))
-            self._details(frame, tree)
             total = tk.StringVar()
-            label(frame, textvariable=total, foreground=GREY).pack(fill="x")
+            label(frame, textvariable=total, foreground=GREY).pack(side="bottom", fill="x")
+            self._details(frame, tree)
+            self._list_last(tree)
             self.frames.append(frame)
             self.trees.append(tree)
             self.totals.append(total)
         self.refresh_buttons()
 
     @staticmethod
+    def _list_last(tree: ttk.Treeview) -> None:
+        """The list takes what is left once the buttons and lines under it are
+        placed: on a small screen the list shrinks, the buttons stay visible."""
+        holder = tree.master
+        if isinstance(holder, ttk.Frame):
+            holder.pack_forget()
+            holder.pack(side="top", fill="both", expand=True)
+
+    @staticmethod
     def _details(frame: ttk.Frame, tree: ttk.Treeview) -> None:
         """The selected line in full under the list (descriptions are cut)."""
         text = tk.StringVar()
-        label(frame, textvariable=text, wraplength=1100).pack(fill="x", pady=(4, 0))
+        label(frame, textvariable=text, wraplength=1100).pack(side="bottom", fill="x", pady=(4, 0))
 
         def show(_event: object = None) -> None:
             selected = tree.selection()
