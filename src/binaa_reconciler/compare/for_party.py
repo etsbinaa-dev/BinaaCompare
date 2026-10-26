@@ -1,111 +1,142 @@
-"""A short file to send to the other party: only what concerns them.
+"""One file for both parties, open on both screens during the phone call.
 
-One right-to-left sheet, written from their point of view («عليكم» / «لكم»):
-what we recorded and they did not, the amount gaps, the possible pairs to
-confirm together, and what they recorded
-that we could not find. Nothing else of our books; written only where the
-user chooses.
+One right-to-left sheet, sorted by date, one numbered line per operation to
+settle: the amount as each party has it side by side (an empty, red cell is
+what is missing in that party's books; two different amounts are yellow; a
+possible pair is orange), «لكم» / «عليكم» for the other party, and an empty
+«الرد» column to fill in during the call. No totals: the two files rarely
+start and end on the same day. Nothing else of our books.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-from binaa_reconciler.compare.engine import Line, Pair, Result, units
-from binaa_reconciler.compare.manual import arabic
-from binaa_reconciler.compare.texts import reason
+from binaa_reconciler.compare.engine import Kind, Line, Result, units
+from binaa_reconciler.compare.manual import ORANGE, RED, YELLOW, arabic
 from binaa_reconciler.core.models import LedgerSide
 
 HEAD = PatternFill("solid", fgColor="D9E1F2")
-RIGHT = Alignment(horizontal="right", vertical="top", wrap_text=True, readingOrder=2)
+CELL = Alignment(horizontal="right", vertical="center", wrap_text=True, readingOrder=2)
+THIN = Side(style="thin", color="BFBFBF")
+BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 MONEY = "#,##0"
 
 
+@dataclass(frozen=True)
+class Row:
+    day: date
+    label: str
+    ours: int | None  # whole units, as in our books (None: missing)
+    theirs: int | None  # as in theirs
+    owed: str  # «لكم» / «عليكم», for the other party
+    note: str
+    fill: PatternFill  # of the amounts
+
+
 def _for_them(x: Line, ours: bool) -> str:
-    """«عليكم» / «لكم» seen by the other party. In our books a debit is owed by
-    them; in theirs a debit is owed by us."""
-    owed_by_them = (x.side is LedgerSide.DEBIT) == ours
-    return "عليكم" if owed_by_them else "لكم"
+    """In our books a debit is owed by them; in theirs, a debit is owed by us."""
+    return "عليكم" if (x.side is LedgerSide.DEBIT) == ours else "لكم"
 
 
-def _arabic_reason(pair: Pair, result: Result) -> str:
-    text = reason(pair, result.names)
-    for name in result.names:
-        text = text.replace(name, arabic(name))
-    return text
+def _total(lines: tuple[Line, ...]) -> int:
+    return units(sum(x.amount for x in lines))
+
+
+def rows(result: Result) -> list[Row]:
+    out = [
+        Row(x.day, x.label, units(x.amount), None, _for_them(x, True), "", RED)
+        for x in result.only[0]
+    ]
+    out += [
+        Row(y.day, y.label, None, units(y.amount), _for_them(y, False), "", RED)
+        for y in result.only[1]
+    ]
+    for pair in result.close:
+        gap = abs(_total(pair.a) - _total(pair.b))
+        out.append(
+            Row(
+                pair.b[0].day,
+                pair.b[0].label or pair.a[0].label,
+                _total(pair.a),
+                _total(pair.b),
+                _for_them(pair.b[0], False),
+                f"فرق {gap:,}",
+                YELLOW,
+            )
+        )
+    for pair in result.possible:
+        if not (pair.a and pair.b) or pair.kind is Kind.REVERSAL:
+            continue  # a movement and its reversal in one file: not theirs to check
+        days = sorted({x.day for x in pair.lines})
+        note = "قد تكون نفس العملية"
+        if pair.kind is Kind.SAME:
+            note += f" — فرق {(days[-1] - days[0]).days} يوم في التاريخ"
+        elif pair.kind is Kind.SUM:
+            note += f" — مجموع {max(len(pair.a), len(pair.b))} عمليات"
+        elif pair.kind is Kind.SIDE:
+            note += " — نفس الجهة عند الطرفين"
+        label = " / ".join(x.label for x in pair.b if x.label) or pair.a[0].label
+        out.append(
+            Row(
+                days[0],
+                label,
+                _total(pair.a),
+                _total(pair.b),
+                _for_them(pair.b[0], False),
+                note,
+                ORANGE,
+            )
+        )
+    out.sort(key=lambda r: r.day)
+    return out
 
 
 def build(result: Result) -> bytes:
     us, them = (arabic(n) for n in result.names)
     wb = Workbook()
     ws = wb.active if wb.active is not None else wb.create_sheet()
-    ws.title = them[:31]
+    ws.title = f"{us} و{them}"[:31]
     ws.sheet_view.rightToLeft = True
-    widths = {"A": 13, "B": 34, "C": 15, "D": 9, "E": 30}
-    for col, w in widths.items():
-        ws.column_dimensions[col].width = w
+    heads = (
+        "رقم",
+        "التاريخ",
+        "البيان",
+        f"عند {us}",
+        f"عند {them}",
+        "لكم / عليكم",
+        "ملاحظة",
+        "الرد",
+    )
+    for col, width in zip("ABCDEFGH", (6, 12, 34, 14, 14, 9, 30, 22), strict=True):
+        ws.column_dimensions[col].width = width
     ws.append([f"مقارنة الحساب بين {us} و{them}"])
     ws["A1"].font = Font(bold=True, size=14)
     if result.period:
         ws.append([f"الفترة: {result.period[0]:%d/%m/%Y} — {result.period[1]:%d/%m/%Y}"])
-
-    def section(title: str, rows: list[list[object]]) -> None:
-        if not rows:
-            return
-        ws.append([])
-        ws.append([f"{title} ({len(rows)})"])
-        ws.cell(ws.max_row, 1).font = Font(bold=True, size=12)
-        ws.append(["التاريخ", "البيان", "المبلغ", "", "ملاحظة"])
-        for cell in ws[ws.max_row]:
-            cell.font, cell.fill = Font(bold=True), HEAD
-        for row in rows:
-            ws.append(row)
-            ws.cell(ws.max_row, 1).number_format = "DD/MM/YYYY"
-            ws.cell(ws.max_row, 3).number_format = MONEY
-            for cell in ws[ws.max_row]:
-                cell.alignment = RIGHT
-
-    section(
-        "سجّلناها عندنا ولم نجدها عندكم — هل سجلتموها؟",
-        [[x.day, x.label, units(x.amount), _for_them(x, ours=True), ""] for x in result.only[0]],
+    ws.append(
+        ["الخانة الحمراء الفارغة: غير مسجلة عند صاحبها — الصفراء: مبلغ مختلف — البرتقالية: للتأكد"]
     )
-    section(
-        "مسجّلة عند الطرفين بمبلغ مختلف",
-        [
-            [
-                pair.b[0].day if pair.b else pair.a[0].day,
-                (pair.b[0].label if pair.b else "") or (pair.a[0].label if pair.a else ""),
-                units(sum(x.amount for x in pair.b)),
-                _for_them(pair.b[0], ours=False) if pair.b else "",
-                f"عندنا {sum(units(x.amount) for x in pair.a):,}",
-            ]
-            for pair in result.close
-        ],
-    )
-    section(
-        "قد تكون نفس العملية — تحتاج تأكيدًا",
-        [
-            [
-                pair.b[0].day,
-                " / ".join(x.label for x in pair.b if x.label),
-                units(sum(x.amount for x in pair.b)),
-                _for_them(pair.b[0], ours=False),
-                "عندنا: "
-                + " + ".join(f"{x.day:%d/%m} {units(x.amount):,}" for x in pair.a)
-                + f" — {_arabic_reason(pair, result)}",
-            ]
-            for pair in result.possible
-            if pair.a and pair.b  # a reversal inside one file is not theirs to check
-        ],
-    )
-    section(
-        "سجّلتموها عندكم ولم نجدها عندنا",
-        [[x.day, x.label, units(x.amount), _for_them(x, ours=False), ""] for x in result.only[1]],
-    )
+    ws.append([])
+    ws.append(list(heads))
+    for cell in ws[ws.max_row]:
+        cell.font, cell.fill, cell.alignment, cell.border = Font(bold=True), HEAD, CELL, BOX
+    ws.freeze_panes = f"A{ws.max_row + 1}"
+    for n, r in enumerate(rows(result), start=1):
+        ws.append([n, r.day, r.label, r.ours, r.theirs, r.owed, r.note, None])
+        line = ws[ws.max_row]
+        for cell in line:
+            cell.alignment, cell.border = CELL, BOX
+        line[1].number_format = "DD/MM/YYYY"
+        for cell in line[3:5]:
+            cell.number_format = MONEY
+            cell.fill = r.fill if (r.fill is not RED or cell.value is None) else PatternFill()
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -116,4 +147,4 @@ def save(result: Result, target: Path) -> Path:
     return target
 
 
-__all__ = ["build", "save"]
+__all__ = ["Row", "build", "rows", "save"]

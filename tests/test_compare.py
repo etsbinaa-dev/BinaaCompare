@@ -309,7 +309,7 @@ def test_a_row_without_amount_before_a_real_operation_is_not_merged():
     assert len(loaded.problems) == 1
 
 
-def test_the_file_for_the_other_party_has_only_what_concerns_them():
+def test_one_file_for_both_parties_side_by_side_by_date():
     r = run(
         [
             line("A1", 3, D, 500),
@@ -325,20 +325,21 @@ def test_the_file_for_the_other_party_has_only_what_concerns_them():
         ],
     )
     ws = load_workbook(io.BytesIO(for_party.build(r))).active
-    assert ws.title == "كلينك" and ws.sheet_view.rightToLeft
-    rows = [r for r in ws.iter_rows(values_only=True) if any(c is not None for c in r)]
-    text = [str(r[0]) for r in rows]
-    assert text[0] == "مقارنة الحساب بين بناء وكلينك"
-    # what we have and they do not, seen by them: our debit = owed by them
-    i = text.index("سجّلناها عندنا ولم نجدها عندكم — هل سجلتموها؟ (2)")
-    assert [(r[2], r[3]) for r in rows[i + 2 : i + 4]] == [(500, "عليكم"), (200, "لكم")]
-    i = text.index("مسجّلة عند الطرفين بمبلغ مختلف (1)")
-    assert rows[i + 2][2:] == (10_150, "عليكم", "عندنا 10,000")
-    i = text.index("قد تكون نفس العملية — تحتاج تأكيدًا (1)")
-    assert rows[i + 2][2:] == (
-        4_000,
-        "عليكم",
-        "عندنا: 10/09 4,000 — نفس المبلغ — فرق 10 يوم في التاريخ",
+    assert ws.title == "بناء وكلينك" and ws.sheet_view.rightToLeft
+    values = [tuple(r) for r in ws.iter_rows(values_only=True)]
+    head = values.index(
+        ("رقم", "التاريخ", "البيان", "عند بناء", "عند كلينك", "لكم / عليكم", "ملاحظة", "الرد")
     )
-    i = text.index("سجّلتموها عندكم ولم نجدها عندنا (2)")
-    assert [(r[2], r[3]) for r in rows[i + 2 : i + 4]] == [(70, "لكم"), (30, "عليكم")]
+    lines = [(r[0], r[1].day, r[3], r[4], r[5], r[6]) for r in values[head + 1 :]]
+    assert lines == [
+        (1, 3, 500, None, "عليكم", None),  # missing at clinique
+        (2, 4, 200, None, "لكم", None),
+        (3, 6, 10_000, 10_150, "عليكم", "فرق 150"),
+        (4, 8, None, 70, "لكم", None),  # missing at binaa
+        (5, 9, None, 30, "عليكم", None),
+        (6, 10, 4_000, 4_000, "عليكم", "قد تكون نفس العملية — فرق 10 يوم في التاريخ"),
+    ]
+    assert not any("مجموع" in str(c) for r in values for c in r)  # no totals
+    first = head + 2
+    assert ws.cell(first, 5).fill.fgColor.rgb.endswith("F8CBAD")  # the missing cell is red
+    assert ws.cell(first, 4).fill.fgColor.rgb in (None, "00000000")

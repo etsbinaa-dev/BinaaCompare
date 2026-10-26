@@ -188,7 +188,7 @@ class CompareApp(tk.Tk):
         self.manual_button = ttk.Button(actions, text="تصدير Excel", command=self.export_manual)
         self.manual_button.pack(side="left")
         self.party_button = ttk.Button(
-            actions, text="ملف للطرف الثاني", command=self.export_for_party
+            actions, text="ملف مشترك للمكالمة", command=self.export_for_party
         )
         self.party_button.pack(side="left", padx=(0, 6))
 
@@ -481,7 +481,7 @@ class CompareApp(tk.Tk):
         if self.result is None:
             return None
         other = manual.arabic(self.result.names[1])
-        target = self.dialogs.ask_save(f"للإرسال إلى {other}.xlsx")
+        target = self.dialogs.ask_save(f"ملف مشترك مع {other}.xlsx")
         if target is None:
             return None
         try:
