@@ -327,7 +327,7 @@ def test_one_short_file_for_both_parties_by_date():
     head = values.index(("التاريخ", "البيان", "مبلغ بناء", "مبلغ كلينك", "ملاحظة"))
     body = [r for r in values[head + 1 :] if r[0]]
     assert body[:-1] == [
-        ("04/09/2026", "SYN", 200, None, "ناقصة عند كلينك — لصالح كلينك"),
+        ("04/09/2026", "SYN", 200, "ناقصة", "ناقصة عند كلينك — لصالح كلينك"),
         # the other date and description only where they differ
         (
             "06/09/2026",
@@ -336,16 +336,17 @@ def test_one_short_file_for_both_parties_by_date():
             10_150,
             "فرق في المبلغ: 150 — عند كلينك بتاريخ 07/09/2026 — بيان كلينك: SYN",
         ),
-        ("08/09/2026", "SYN", None, 70, "ناقصة عند بناء — لصالح كلينك"),
-        ("09/09/2026", "SYN", None, 30, "ناقصة عند بناء — لصالح بناء"),
-        ("12/09/2026", "SYN", None, 800, "ناقصة عند بناء — لصالح بناء"),
-        ("12/09/2026", "SYN", None, 1_200, "ناقصة عند بناء — لصالح بناء"),
+        ("08/09/2026", "SYN", "ناقصة", 70, "ناقصة عند بناء — لصالح كلينك"),
+        ("09/09/2026", "SYN", "ناقصة", 30, "ناقصة عند بناء — لصالح بناء"),
+        ("12/09/2026", "SYN", "ناقصة", 800, "ناقصة عند بناء — لصالح بناء"),
+        ("12/09/2026", "SYN", "ناقصة", 1_200, "ناقصة عند بناء — لصالح بناء"),
     ]  # the possible pair (500 / 500) is not there: decided in the application
     assert body[-1][0] == "مجموع الفروق في الأسطر الصفراء (1 عملية): 150"  # the only total
     assert "A1:E1" in {str(m) for m in ws.merged_cells.ranges}  # the title is never cut
     first = head + 2
-    assert ws.cell(first, 4).fill.fgColor.rgb.endswith("F8CBAD")  # the missing side is red
-    assert ws.cell(first, 3).fill.fgColor.rgb in (None, "00000000")
+    assert ws.cell(first, 4).value == "ناقصة"  # the missing side, marked and darker
+    assert ws.cell(first, 4).fill.fgColor.rgb.endswith("FF8B8B")
+    assert ws.cell(first, 1).fill.fgColor.rgb.endswith("F8CBAD")  # the whole line is red
 
 
 def test_a_line_settled_by_hand_leaves_the_list_and_is_remembered():

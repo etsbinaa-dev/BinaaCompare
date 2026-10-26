@@ -29,6 +29,7 @@ CELL = Alignment(horizontal="right", vertical="center", wrap_text=True, readingO
 THIN = Edge(style="thin", color="BFBFBF")
 BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 MONEY = "#,##0"
+MISSING = PatternFill("solid", fgColor="FF8B8B")
 
 
 @dataclass(frozen=True)
@@ -129,10 +130,13 @@ def build(result: Result) -> bytes:
         line = ws[ws.max_row]
         for cell in line:
             cell.alignment, cell.border = CELL, BOX
+        for cell in line:  # the whole line in its colour: seen at a glance
+            cell.fill = r.fill
         for cell, part in ((line[2], o), (line[3], t)):
             cell.number_format = MONEY
-            if r.fill is not RED or not part.lines:  # red: the missing side only
-                cell.fill = r.fill
+            if r.fill is RED and not part.lines:  # the missing amount: darker, marked
+                cell.value, cell.fill = "ناقصة", MISSING
+                cell.font = Font(bold=True, color="9C0006")
     gaps = [r for r in rows(result) if r.fill is YELLOW]
     if gaps:  # the one total that means something: the amount gaps
         total = sum(
