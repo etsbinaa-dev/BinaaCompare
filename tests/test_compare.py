@@ -328,16 +328,16 @@ def test_one_file_for_both_parties_side_by_side_by_date():
     assert ws.title == "بناء وكلينك" and ws.sheet_view.rightToLeft
     values = [tuple(r) for r in ws.iter_rows(values_only=True)]
     head = values.index(
-        ("رقم", "التاريخ", "البيان", "عند بناء", "عند كلينك", "لكم / عليكم", "ملاحظة", "الرد")
+        ("رقم", "التاريخ", "البيان", "عند بناء", "عند كلينك", "لصالح", "ملاحظة", "الرد")
     )
     lines = [(r[0], r[1].day, r[3], r[4], r[5], r[6]) for r in values[head + 1 :] if r[1]]
     assert lines == [
-        (1, 3, 500, None, "عليكم", None),  # missing at clinique
-        (2, 4, 200, None, "لكم", None),
-        (3, 6, 10_000, 10_150, "عليكم", "فرق 150"),
-        (4, 8, None, 70, "لكم", None),  # missing at binaa
-        (5, 9, None, 30, "عليكم", None),
-        (6, 10, 4_000, 4_000, "عليكم", "قد تكون نفس العملية — فرق 10 يوم في التاريخ"),
+        (1, 3, 500, None, "لصالح بناء", None),  # missing at clinique
+        (2, 4, 200, None, "لصالح كلينك", None),
+        (3, 6, 10_000, 10_150, "لصالح بناء", "فرق 150"),
+        (4, 8, None, 70, "لصالح كلينك", None),  # missing at binaa
+        (5, 9, None, 30, "لصالح بناء", None),
+        (6, 10, 4_000, 4_000, "لصالح بناء", "قد تكون نفس العملية — فرق 10 يوم في التاريخ"),
     ]
     totals = [str(c) for r in values for c in r if "مجموع" in str(c)]
     assert totals == ["مجموع فروق المبالغ (1 عملية): 150"]  # the only total

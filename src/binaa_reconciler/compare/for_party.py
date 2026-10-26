@@ -3,7 +3,8 @@
 One right-to-left sheet, sorted by date, one numbered line per operation to
 settle: the amount as each party has it side by side (an empty, red cell is
 what is missing in that party's books; two different amounts are yellow; a
-possible pair is orange), «لكم» / «عليكم» for the other party, and an empty
+possible pair is orange), in whose favour it is («لصالح بناء»: clear for
+both, whoever reads the file), and an empty
 «الرد» column to fill in during the call. No other totals: the two files rarely
 start and end on the same day; only the amount gaps are added up. Nothing
 else of our books.
@@ -36,14 +37,16 @@ class Row:
     label: str
     ours: int | None  # whole units, as in our books (None: missing)
     theirs: int | None  # as in theirs
-    owed: str  # «لكم» / «عليكم», for the other party
+    owed: str  # «لصالح <name>»: who the operation favours
     note: str
     fill: PatternFill  # of the amounts
 
 
-def _for_them(x: Line, ours: bool) -> str:
-    """In our books a debit is owed by them; in theirs, a debit is owed by us."""
-    return "عليكم" if (x.side is LedgerSide.DEBIT) == ours else "لكم"
+def _favour(x: Line, ours: bool, names: tuple[str, str]) -> str:
+    """In our books a debit is owed by them (in our favour); in theirs, a debit
+    is owed by us (in their favour)."""
+    us, them = (arabic(n) for n in names)
+    return f"لصالح {us if (x.side is LedgerSide.DEBIT) == ours else them}"
 
 
 def _total(lines: tuple[Line, ...]) -> int:
@@ -52,11 +55,11 @@ def _total(lines: tuple[Line, ...]) -> int:
 
 def rows(result: Result) -> list[Row]:
     out = [
-        Row(x.day, x.label, units(x.amount), None, _for_them(x, True), "", RED)
+        Row(x.day, x.label, units(x.amount), None, _favour(x, True, result.names), "", RED)
         for x in result.only[0]
     ]
     out += [
-        Row(y.day, y.label, None, units(y.amount), _for_them(y, False), "", RED)
+        Row(y.day, y.label, None, units(y.amount), _favour(y, False, result.names), "", RED)
         for y in result.only[1]
     ]
     for pair in result.close:
@@ -67,7 +70,7 @@ def rows(result: Result) -> list[Row]:
                 pair.b[0].label or pair.a[0].label,
                 _total(pair.a),
                 _total(pair.b),
-                _for_them(pair.b[0], False),
+                _favour(pair.b[0], False, result.names),
                 f"فرق {gap:,}",
                 YELLOW,
             )
@@ -90,7 +93,7 @@ def rows(result: Result) -> list[Row]:
                 label,
                 _total(pair.a),
                 _total(pair.b),
-                _for_them(pair.b[0], False),
+                _favour(pair.b[0], False, result.names),
                 note,
                 ORANGE,
             )
@@ -111,7 +114,7 @@ def build(result: Result) -> bytes:
         "البيان",
         f"عند {us}",
         f"عند {them}",
-        "لكم / عليكم",
+        "لصالح",
         "ملاحظة",
         "الرد",
     )
