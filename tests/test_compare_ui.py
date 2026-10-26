@@ -237,3 +237,25 @@ def test_the_match_button_stays_visible_on_a_small_screen(files, tmp_path):
         assert bottom <= app.winfo_rooty() + app.winfo_height()
     finally:
         app.destroy()
+
+
+def test_a_line_corrected_in_rimsoft_is_settled_by_hand(files, tmp_path):
+    try:
+        app = CompareApp(FakeDialogs(files, tmp_path / "out.xlsx"))
+    except Exception as exc:  # no display
+        pytest.skip(f"Tk cannot open a window here: {type(exc).__name__}")
+    try:
+        app.box_a.choose()
+        app.box_b.choose()
+        app.compare_button.invoke()
+        tree = app.trees[0]
+        (key,) = tree.get_children()  # the 500 alone at binaa
+        tree.selection_set(key)
+        app.settle(0)
+        app.update()
+        assert tree.get_children() == ()
+        assert "✔️ تمت تسويتها: 1" in app.headline_var.get()
+        app.undo()
+        assert tree.get_children() == (key,)
+    finally:
+        app.destroy()

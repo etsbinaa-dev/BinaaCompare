@@ -80,6 +80,7 @@ def statuses(result: Result, i: int) -> tuple[set[int], dict[int, tuple[str, Pat
     matched: set[int] = set()
     for x, y in result.matched:
         matched.add((x, y)[i].row)
+    matched.update(x.row for x in result.settled if x.key[0] == "AB"[i])
     for pair in result.confirmed:
         matched.update(x.row for x in (pair.a if i == 0 else pair.b))
         if pair.kind is Kind.REVERSAL:

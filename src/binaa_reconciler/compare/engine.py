@@ -45,6 +45,7 @@ class Kind(StrEnum):
     SIDE = "SIDE"  # the same amount on the same side in both files
     SUM = "SUM"  # two lines of one day making one line of the other file
     CLOSE = "CLOSE"  # a close amount (price difference?)
+    SETTLED = "SETTLED"  # one line the user settled by hand (corrected in RIM-Soft)
 
 
 @dataclass(frozen=True)
@@ -106,6 +107,7 @@ class Result:
     period: tuple[date, date] | None
     matched: list[tuple[Line, Line]] = field(default_factory=list)  # automatic
     confirmed: list[Pair] = field(default_factory=list)  # confirmed by the user
+    settled: list[Line] = field(default_factory=list)  # settled by hand, set aside
     possible: list[Pair] = field(default_factory=list)  # to confirm or reject
     close: list[Pair] = field(default_factory=list)  # close amounts, to check
     only: tuple[list[Line], list[Line]] = field(default_factory=lambda: ([], []))
@@ -333,7 +335,10 @@ def compare(
     refused = set(rejected)
     for pair in confirmed:
         if not any(x.key in used for x in pair.lines):
-            result.confirmed.append(pair)
+            if pair.kind is Kind.SETTLED:
+                result.settled.extend(pair.lines)
+            else:
+                result.confirmed.append(pair)
             used.update(x.key for x in pair.lines)
     pairs = _possible(a, b, refused, used)
     for pair in pairs:

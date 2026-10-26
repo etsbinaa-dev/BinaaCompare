@@ -344,3 +344,17 @@ def test_one_file_for_both_parties_side_by_side_by_date():
     first = head + 2
     assert ws.cell(first, 5).fill.fgColor.rgb.endswith("F8CBAD")  # the missing cell is red
     assert ws.cell(first, 4).fill.fgColor.rgb in (None, "00000000")
+
+
+def test_a_line_settled_by_hand_leaves_the_list_and_is_remembered():
+    from binaa_reconciler.compare.engine import Kind, Pair
+    from binaa_reconciler.compare.texts import headline
+
+    a, b = [line("A1", 3, D, 500), line("A2", 4, C, 200)], [line("B1", 8, D, 70)]
+    settled = [(True, Pair(Kind.SETTLED, (a[0],), ())), (True, Pair(Kind.SETTLED, (), (b[0],)))]
+    r = run_with(a, b, confirmed=[p for _, p in settled])
+    assert [x.key for x in r.only[0]] == ["A2"] and r.only[1] == []
+    assert [x.key for x in r.settled] == ["A1", "B1"] and r.matched_count == 2  # edges only
+    assert "✔️ تمت تسويتها: 2" in headline(r)
+    memory.save(NAMES, settled)
+    assert [p.kind for _, p in memory.load(NAMES, a, b)] == [Kind.SETTLED, Kind.SETTLED]

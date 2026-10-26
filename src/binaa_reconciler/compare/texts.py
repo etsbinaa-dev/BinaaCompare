@@ -26,6 +26,8 @@ def headline(result: Result) -> str:
         parts.append(f"💲 فرق في المبلغ: {len(result.close)}")
     parts.append(f"❌ عند {a} فقط: {n_a}")
     parts.append(f"❌ عند {b} فقط: {n_b}")
+    if result.settled:
+        parts.append(f"✔️ تمت تسويتها: {len(result.settled)}")
     return " — ".join(parts)
 
 

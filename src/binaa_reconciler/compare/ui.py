@@ -19,6 +19,8 @@ from tkinter import filedialog, messagebox, ttk
 from binaa_reconciler.compare import for_party, manual, memory
 from binaa_reconciler.compare.engine import (
     SIDE_AR,
+    Kind,
+    Pair,
     Result,
     amount_text,
     common_period,
@@ -248,10 +250,23 @@ class CompareApp(tk.Tk):
         self.frames: list[ttk.Frame] = []
         self.trees: list[ttk.Treeview] = []
         self.totals: list[tk.StringVar] = []
-        for _ in range(2):
+        for i in range(2):
             frame = ttk.Frame(self.tabs, padding=6)
             self.tabs.add(frame, text="")
             tree = self._tree(frame, COLUMNS, WIDTHS, stretch=(3, 5))
+            buttons = ttk.Frame(frame)  # at the bottom: never pushed off a small screen
+            buttons.pack(side="bottom", fill="x", pady=(6, 0))
+            ttk.Button(
+                buttons, text="✔ تمت تسويتها", style="Big.TButton", command=partial(self.settle, i)
+            ).pack(side="right")
+            undo = ttk.Button(buttons, text="↶ تراجع عن آخر قرار", command=self.undo)
+            undo.pack(side="left")
+            self.undo_buttons.append(undo)
+            label(
+                buttons,
+                "صُحّحت في RIM-Soft؟ اخترها (أو عدة أسطر) ثم «تمت تسويتها» — تختفي من القائمة",
+                foreground=GREY,
+            ).pack(side="right", padx=8)
             total = tk.StringVar()
             label(frame, textvariable=total, foreground=GREY).pack(side="bottom", fill="x")
             self._details(frame, tree)
@@ -288,6 +303,21 @@ class CompareApp(tk.Tk):
         for box in (self.box_a, self.box_b):
             if box.loaded is None and (last := memory.last_file(box.key)) is not None:
                 box.load(last, again=True)
+
+    def settle(self, i: int) -> None:
+        """✔ the selected lines of side i were settled by hand (corrected in
+        RIM-Soft): set aside, saved like the other decisions."""
+        if self.result is None:
+            return
+        by_key = {x.key: x for x in self.result.only[i]}
+        chosen = [by_key[k] for k in self.trees[i].selection() if k in by_key]
+        if not chosen:
+            return
+        for x in chosen:
+            pair = Pair(Kind.SETTLED, (x,), ()) if i == 0 else Pair(Kind.SETTLED, (), (x,))
+            self.decisions.append((True, pair))
+        self._save()
+        self.run()
 
     def undo(self) -> None:
         """Take back the last ✓ / ✗ (the pair is proposed again)."""
