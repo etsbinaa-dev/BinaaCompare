@@ -109,7 +109,7 @@ def test_two_files_one_button_two_lists(files, tmp_path):
         app.compare_button.invoke()
         app.update()
         assert app.trees[0].get_children() == ()
-        assert "غير معروضة لأنها خارج الفترة المختارة: 1 عملية عند binaa" in app.note_var.get()
+        assert "غير معروضة لأنها خارج الفترة المختارة: 1 عملية عند بناء" in app.note_var.get()
         target = app.export_manual()
         assert target is not None and target.exists()
         assert load_workbook(io.BytesIO(target.read_bytes())).sheetnames == ["بناء", "كلينك"]
