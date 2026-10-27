@@ -314,6 +314,9 @@ class CompareApp(tk.Tk):
             self.frames.append(frame)
             self.trees.append(tree)
             self.totals.append(total)
+        # tabs right to left in the order of the cards above them
+        for frame in (self.pair_frames["possible"], self.pair_frames["close"], *self.frames):
+            self.tabs.insert(0, frame)
         self.refresh_buttons()
 
     @staticmethod
@@ -554,7 +557,7 @@ class CompareApp(tk.Tk):
             if box.loaded is not None and box.loaded.problems:
                 rows = "، ".join(p.split(":")[0].replace("السطر ", "") for p in box.loaded.problems)
                 notes.append(f"⚠️ سطور لم تُقرأ في ملف {box.name}: {rows}")
-        self.note_var.set("   •   ".join(notes))
+        self.note_var.set(arabic_text("   •   ".join(notes), result.names))
         a, b = result.names
         by_gap = sorted(result.close, key=lambda p: (abs(p.difference), p.day))
         gaps = sum(abs(p.difference) for p in result.close)
@@ -575,10 +578,11 @@ class CompareApp(tk.Tk):
                 row = (da, ma, la, db, mb, lb, gap, reason(pair, result.names))
                 tree.insert("", "end", iid=pair.key, values=row[::-1], tags=_stripe(tree))
             for k, name in ((0, a), (1, a), (2, a), (3, b), (4, b), (5, b)):
-                tree.heading(f"c{k}", text=f"{PAIR_COLUMNS[k]} {name}", anchor="e")
+                tree.heading(f"c{k}", text=f"{PAIR_COLUMNS[k]} {arabic(name)}", anchor="e")
         for i in range(2):
             lines = result.only[i]
-            self.tabs.tab(self.frames[i], text=f"❌ عند {result.names[i]} فقط ({len(lines)})")  # type: ignore[no-untyped-call]
+            alone = f"❌ عند {arabic(result.names[i])} فقط ({len(lines)})"
+            self.tabs.tab(self.frames[i], text=alone)  # type: ignore[no-untyped-call]
             tree = self.trees[i]
             tree.delete(*tree.get_children())
             for x in lines:
@@ -596,6 +600,23 @@ class CompareApp(tk.Tk):
             tree.configure(displaycolumns=[f"c{k}" for k in reversed(shown)])  # no empty «المرجع»
         for tree in (*self.pair_trees.values(), *self.trees):
             self.sort(tree, "", again=True)  # keep the order the user chose
+        current = self.tabs.select()  # type: ignore[no-untyped-call]
+        empty = {
+            str(f)
+            for f, t in zip(self._tab_frames(), self._tab_trees(), strict=True)
+            if not t.get_children()
+        }
+        if current in empty:  # an empty list open: show the next one with lines
+            for frame, tree in zip(self._tab_frames(), self._tab_trees(), strict=True):
+                if tree.get_children():
+                    self.tabs.select(frame)  # type: ignore[no-untyped-call]
+                    break
+
+    def _tab_frames(self) -> list[ttk.Frame]:
+        return [self.pair_frames["possible"], self.pair_frames["close"], *self.frames]
+
+    def _tab_trees(self) -> list[ttk.Treeview]:
+        return [self.pair_trees["possible"], self.pair_trees["close"], *self.trees]
 
     def export_for_party(self) -> Path | None:
         """A short file for the other party: only what concerns them."""
