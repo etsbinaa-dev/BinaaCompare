@@ -10,5 +10,6 @@
 
 يعمل محليًا بالكامل: لا إنترنت، ولا يُعدَّل أي ملف أصلي. قرارات ✓ / ✗ تُحفظ على الجهاز نفسه فقط، بعد كل قرار.
 
-Compare two RIM-Soft account statements (Windows, offline). Download
+Compare two RIM-Soft account statements (Windows, offline; look: the MIT-licensed
+Sun Valley ttk theme, bundled). Download
 `BinaaCompare-Windows.zip` from the Releases page. License: MIT.

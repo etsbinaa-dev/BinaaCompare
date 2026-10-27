@@ -40,6 +40,14 @@ from binaa_reconciler.compare.texts import (
 )
 
 FONT = ("Segoe UI", 11)
+CARDS = (  # key, title, (background, text colour): the colours of the Excel files too
+    ("matched", "✅ متطابقة", ("#E8F5E9", "#2E7D32")),
+    ("possible", "🔎 قد تكون نفس العملية", ("#FFF3E0", "#B45309")),
+    ("close", "💲 فرق في المبلغ", ("#FFF8E1", "#8D6E00")),
+    ("A", "❌ عند الطرف الأول فقط", ("#FDECEA", "#A01010")),
+    ("B", "❌ عند الطرف الثاني فقط", ("#FDECEA", "#A01010")),
+)
+STRIPE = "#F5F7FA"  # every other line of the lists
 BIG = ("Segoe UI", 13, "bold")
 GREY, ORANGE, GREEN, RED = "#555555", "#b45309", "#2e7d32", "#a01010"
 COLUMNS = ("التاريخ", "المبلغ", "الجهة", "الوصف", "المرجع", "ملاحظة")
@@ -159,8 +167,14 @@ class CompareApp(tk.Tk):
         self.option_add("*Font", FONT)
         self.minsize(760, 520)
         self._fit(1200, 780)
+        accent = _modern_theme(self)
         style = ttk.Style(self)
         style.configure("Big.TButton", font=BIG, padding=(18, 8))
+        style.configure("Treeview", rowheight=28, font=FONT)
+        style.configure("Treeview.Heading", font=("Segoe UI", 11, "bold"))
+        self.go_style = "Accent.TButton" if accent else "Big.TButton"
+        if accent:
+            style.configure("Accent.TButton", font=BIG, padding=(22, 8))
 
         root = ttk.Frame(self, padding=12)
         root.pack(fill="both", expand=True)
@@ -180,7 +194,7 @@ class CompareApp(tk.Tk):
         actions = ttk.Frame(root)
         actions.pack(fill="x")
         self.compare_button = ttk.Button(
-            actions, text="قارن", style="Big.TButton", command=self.run
+            actions, text="قارن", style=self.go_style, command=self.run
         )
         self.compare_button.pack(side="right")
         self.from_var, self.to_var = tk.StringVar(), tk.StringVar()
@@ -197,11 +211,29 @@ class CompareApp(tk.Tk):
         )
         self.party_button.pack(side="left", padx=(0, 6))
 
-        self.headline_var = tk.StringVar()
+        self.headline_var = tk.StringVar()  # the same counts in one sentence (window title)
         self.note_var = tk.StringVar()
-        self.headline = label(root, textvariable=self.headline_var, font=BIG, wraplength=1100)
-        self.headline.pack(fill="x", pady=(6, 0))
-        label(root, textvariable=self.note_var, foreground=GREY, wraplength=1100).pack(fill="x")
+        label(root, textvariable=self.note_var, foreground=GREY, wraplength=1150).pack(
+            side="bottom", fill="x", pady=(4, 0)
+        )
+        cards = ttk.Frame(root)
+        cards.pack(fill="x", pady=(10, 2))
+        self.cards: dict[str, tk.StringVar] = {}
+        self.card_titles: dict[str, tk.StringVar] = {}
+        for key, title_text, (bg, fg) in CARDS:
+            card = tk.Frame(cards, bg=bg, padx=12, pady=6, cursor="hand2")
+            card.pack(side="right", fill="x", expand=True, padx=4)
+            number = tk.StringVar(value="—")
+            self.cards[key] = number
+            big = tk.Label(card, textvariable=number, bg=bg, fg=fg, font=("Segoe UI", 20, "bold"))
+            self.card_titles[key] = tk.StringVar(value=title_text)
+            small = tk.Label(
+                card, textvariable=self.card_titles[key], bg=bg, fg=fg, font=("Segoe UI", 11)
+            )
+            big.pack()
+            small.pack()
+            for widget in (card, big, small):
+                widget.bind("<Button-1>", partial(self._open_card, key))
 
         # four lists, one tab each: the pairs to confirm, the close amounts, and
         # what each side has alone
@@ -305,6 +337,17 @@ class CompareApp(tk.Tk):
             text.set("  |  ".join(str(v) for v in values if str(v).strip()))
 
         tree.bind("<<TreeviewSelect>>", show, add="+")
+
+    def _open_card(self, key: str, _event: object = None) -> None:
+        """A click on a card opens its list (the matched ones have none)."""
+        frames = {
+            "possible": self.pair_frames.get("possible"),
+            "close": self.pair_frames.get("close"),
+            "A": self.frames[0] if self.frames else None,
+            "B": self.frames[1] if len(self.frames) > 1 else None,
+        }
+        if (frame := frames.get(key)) is not None:
+            self.tabs.select(frame)  # type: ignore[no-untyped-call]
 
     def _reopen_last_files(self) -> None:
         """The two files of last time are loaded again (another can be chosen)."""
@@ -485,8 +528,18 @@ class CompareApp(tk.Tk):
 
     def show(self, result: Result) -> None:
         self.headline_var.set(headline(result))
-        clean = not any((*result.only, result.possible, result.close))
-        self.headline.configure(foreground=GREEN if clean else ORANGE)
+        self.title(f"{headline(result)} — BinaaCompare")
+        for key, count in (
+            ("matched", result.matched_count),
+            ("possible", len(result.possible)),
+            ("close", len(result.close)),
+            ("A", len(result.only[0])),
+            ("B", len(result.only[1])),
+        ):
+            self.cards[key].set(str(count))
+        a_ar, b_ar = (arabic(n) for n in result.names)
+        self.card_titles["A"].set(f"عند {a_ar} فقط")
+        self.card_titles["B"].set(f"عند {b_ar} فقط")
         notes = [title(result)]
         if extra := footnote(result):
             notes.append(extra)
@@ -501,7 +554,7 @@ class CompareApp(tk.Tk):
             if box.loaded is not None and box.loaded.problems:
                 rows = "، ".join(p.split(":")[0].replace("السطر ", "") for p in box.loaded.problems)
                 notes.append(f"⚠️ سطور لم تُقرأ في ملف {box.name}: {rows}")
-        self.note_var.set("\n".join(notes))
+        self.note_var.set("   •   ".join(notes))
         a, b = result.names
         by_gap = sorted(result.close, key=lambda p: (abs(p.difference), p.day))
         gaps = sum(abs(p.difference) for p in result.close)
@@ -520,7 +573,7 @@ class CompareApp(tk.Tk):
                 db, mb, lb = side_cells(pair.b)
                 gap = amount_text(abs(pair.difference)) if pair.a and pair.b else ""
                 row = (da, ma, la, db, mb, lb, gap, reason(pair, result.names))
-                tree.insert("", "end", iid=pair.key, values=row[::-1])
+                tree.insert("", "end", iid=pair.key, values=row[::-1], tags=_stripe(tree))
             for k, name in ((0, a), (1, a), (2, a), (3, b), (4, b), (5, b)):
                 tree.heading(f"c{k}", text=f"{PAIR_COLUMNS[k]} {name}", anchor="e")
         for i in range(2):
@@ -537,7 +590,7 @@ class CompareApp(tk.Tk):
                     x.ref,
                     arabic_text(result.notes.get(x.key, ""), result.names),
                 )
-                tree.insert("", "end", iid=x.key, values=values[::-1])
+                tree.insert("", "end", iid=x.key, values=values[::-1], tags=_stripe(tree))
             self.totals[i].set(total_text(result, i))
             shown = [k for k in range(len(COLUMNS)) if k != 4 or any(x.ref for x in lines)]
             tree.configure(displaycolumns=[f"c{k}" for k in reversed(shown)])  # no empty «المرجع»
@@ -576,6 +629,24 @@ class CompareApp(tk.Tk):
             return None
         self.dialogs.open_file(target)
         return target
+
+
+def _stripe(tree: ttk.Treeview) -> tuple[str, ...]:
+    """Every other line lightly shaded: easier to follow a line across."""
+    tree.tag_configure("stripe", background=STRIPE)
+    return ("stripe",) if len(tree.get_children()) % 2 else ()
+
+
+def _modern_theme(root: tk.Tk) -> bool:
+    """The Windows 11 look (Sun Valley theme, shipped with the program, offline);
+    the plain look when it is not there."""
+    try:
+        import sv_ttk
+
+        sv_ttk.set_theme("light", root)
+    except Exception:
+        return False
+    return True
 
 
 def _sort_key(text: str) -> tuple[int, object]:

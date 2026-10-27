@@ -26,6 +26,7 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx `
             --distpath dist --workpath build\pyinstaller --specpath build\spec `
             --exclude-module pytest --exclude-module setuptools --exclude-module pip `
+            --collect-data sv_ttk `
             --name BinaaCompare packaging\windows\compare_entry.py
           if ($LASTEXITCODE) { throw "PyInstaller failed" }
           $stage = "dist\BinaaCompare-Windows"

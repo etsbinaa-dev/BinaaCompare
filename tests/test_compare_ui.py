@@ -80,6 +80,11 @@ def test_two_files_one_button_two_lists(files, tmp_path):
         app.update()
         head = app.headline_var.get()
         assert "✅ متطابقة: 1" in head and "🔎 قد تكون نفس العملية: 1" in head
+        # the cards: one number per list, the parties' names in Arabic
+        assert (app.cards["matched"].get(), app.cards["possible"].get()) == ("1", "1")
+        assert app.card_titles["B"].get() == "عند كلينك فقط"
+        app._open_card("B")
+        assert app.tabs.select() == str(app.frames[1])
         alone = [app.trees[0].item(k, "values")[::-1] for k in app.trees[0].get_children()]
         assert [row[1] for row in alone] == ["500"]  # whole amounts, no decimals
         # 300 credit on both sides: a possible pair (entry side to check), not alone
