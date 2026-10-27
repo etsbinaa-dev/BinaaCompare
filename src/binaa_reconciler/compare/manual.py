@@ -28,7 +28,7 @@ from binaa_reconciler.compare.engine import (
     amount_text,
 )
 from binaa_reconciler.compare.files import Loaded
-from binaa_reconciler.compare.texts import reason
+from binaa_reconciler.compare.texts import arabic, arabic_text, reason
 from binaa_reconciler.core.models import LedgerSide
 
 RED = PatternFill("solid", fgColor="F8CBAD")
@@ -37,21 +37,6 @@ YELLOW = PatternFill("solid", fgColor="FFF2CC")
 GREY = PatternFill("solid", fgColor="E7E6E6")
 WRAP = Alignment(wrap_text=True, vertical="top", horizontal="right", readingOrder=2)
 RLM = "\u200f"  # keeps Latin names and numbers in place inside Arabic text
-
-
-ARABIC_NAMES = {"binaa": "بناء", "clinique": "كلينك", "clinic": "كلينك", "cliniq": "كلينك"}
-
-
-def arabic(name: str) -> str:
-    """The party's name in Arabic letters when known: no Latin word inside an
-    Arabic sentence, so the sentence never breaks (else the name as typed)."""
-    return ARABIC_NAMES.get(name.strip().casefold(), name)
-
-
-def _arabic_text(text: str, names: tuple[str, str]) -> str:
-    for name in names:
-        text = text.replace(name, arabic(name))
-    return text
 
 
 def _rtl(text: str) -> str:
@@ -100,7 +85,7 @@ def statuses(result: Result, i: int) -> tuple[set[int], dict[int, tuple[str, Pat
         note = result.notes.get(x.key)
         text = f"عند {result.names[i]} فقط" + (f" — {note}" if note else "")
         status[x.row] = (text, RED)
-    status = {row: (_arabic_text(t, result.names), f) for row, (t, f) in status.items()}
+    status = {row: (arabic_text(t, result.names), f) for row, (t, f) in status.items()}
     return matched, status
 
 

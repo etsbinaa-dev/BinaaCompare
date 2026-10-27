@@ -385,7 +385,7 @@ def compare(
                 twins = [y for y in seen.get(number, []) if y.key != x.key]
                 if twins:
                     days = "، ".join(f"{y.day:%d/%m/%Y}" for y in twins[:3])
-                    note = f"⚠️ رقم {number} مسجّل مرتين في ملف {names[i]} ({days})"
+                    note = f"⚠️ {number} مسجّل مرتين: {days}"
                     result.notes[x.key] = note
                     break
     for i, lines in enumerate(result.only):  # the same amount alone on the other side
@@ -393,7 +393,7 @@ def compare(
         for x in lines:
             if same := others.get(x.amount):
                 days = "، ".join(f"{y.day:%d/%m/%Y}" for y in same[:3])
-                same_note = f"⚠️ نفس المبلغ عند {names[1 - i]} بتاريخ {days}"
+                same_note = f"⚠️ نفس المبلغ عند {names[1 - i]}: {days}"
                 result.notes[x.key] = " — ".join(filter(None, (result.notes.get(x.key), same_note)))
     for i, lines in enumerate(result.only):
         other = b if i == 0 else a

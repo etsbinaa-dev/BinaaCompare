@@ -28,6 +28,8 @@ from binaa_reconciler.compare.engine import (
 )
 from binaa_reconciler.compare.files import Loaded, load
 from binaa_reconciler.compare.texts import (
+    arabic,
+    arabic_text,
     footnote,
     headline,
     reason,
@@ -271,7 +273,7 @@ class CompareApp(tk.Tk):
             total = tk.StringVar()
             label(frame, textvariable=total, foreground=GREY).pack(side="bottom", fill="x")
             same = tk.StringVar()  # why alone: the same amount on the other side
-            label(frame, textvariable=same, foreground=ORANGE, wraplength=1100).pack(
+            label(frame, textvariable=same, foreground=ORANGE, wraplength=900).pack(
                 side="bottom", fill="x"
             )
             tree.bind("<<TreeviewSelect>>", partial(self._show_same_amount, i, same), add="+")
@@ -533,10 +535,12 @@ class CompareApp(tk.Tk):
                     SIDE_AR[x.side],
                     x.label,
                     x.ref,
-                    result.notes.get(x.key, ""),
+                    arabic_text(result.notes.get(x.key, ""), result.names),
                 )
                 tree.insert("", "end", iid=x.key, values=values[::-1])
             self.totals[i].set(total_text(result, i))
+            shown = [k for k in range(len(COLUMNS)) if k != 4 or any(x.ref for x in lines)]
+            tree.configure(displaycolumns=[f"c{k}" for k in reversed(shown)])  # no empty «المرجع»
         for tree in (*self.pair_trees.values(), *self.trees):
             self.sort(tree, "", again=True)  # keep the order the user chose
 
@@ -544,7 +548,7 @@ class CompareApp(tk.Tk):
         """A short file for the other party: only what concerns them."""
         if self.result is None:
             return None
-        other = manual.arabic(self.result.names[1])
+        other = arabic(self.result.names[1])
         target = self.dialogs.ask_save(f"ملف مشترك مع {other}.xlsx")
         if target is None:
             return None

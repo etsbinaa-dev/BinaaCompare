@@ -271,8 +271,8 @@ def test_manual_export_writes_dates_even_when_the_file_has_serial_numbers():
 
 def test_the_same_amount_alone_on_both_sides_is_pointed_out():
     r = run([line("A1", 2, D, 4_000)], [line("B1", 25, C, 4_000)])  # 23 days apart
-    assert r.notes["A1"] == "⚠️ نفس المبلغ عند clinique بتاريخ 25/09/2026"
-    assert r.notes["B1"] == "⚠️ نفس المبلغ عند binaa بتاريخ 02/09/2026"
+    assert r.notes["A1"] == "⚠️ نفس المبلغ عند clinique: 25/09/2026"
+    assert r.notes["B1"] == "⚠️ نفس المبلغ عند binaa: 02/09/2026"
 
 
 def _xlsx4(rows) -> bytes:
@@ -376,11 +376,11 @@ def test_why_a_line_is_alone_although_the_other_side_has_the_same_amount():
     r = run(a, b)
     (alone,) = [x for x in r.only[1] if x.amount == 340_200]
     assert same_amount(r, alone, b, a, 1) == (
-        "المبلغ 3,402 بين 31/08 و30/09: عند clinique 3 مرة، وعند binaa 2 مرة"
-        " — كلها مطابقة، فعند clinique عملية زائدة أو عند binaa عملية ناقصة"
+        "المبلغ 3,402 بين 31/08 و30/09: كلينك 3 مرة — بناء 2 مرة\n"
+        "كلها مطابقة: عملية زائدة عند كلينك أو ناقصة عند بناء"
     )
     (other,) = [x for x in r.only[1] if x.key == "B4"]
-    assert same_amount(r, other, b, a, 1) == "المبلغ 77 غير موجود عند binaa بين 25/08 و24/09"
+    assert same_amount(r, other, b, a, 1) == "المبلغ 77 غير موجود عند بناء بين 25/08 و24/09"
 
 
 def test_a_delivery_note_number_written_twice_in_one_file_is_pointed_out():
@@ -391,5 +391,5 @@ def test_a_delivery_note_number_written_twice_in_one_file_is_pointed_out():
         line("A4", 23, D, 700, "NFT 26T01660"),
     ]
     r = run(a, [line("B1", 14, C, 3_402)])
-    assert r.notes["A2"].startswith("⚠️ رقم BL 38957 مسجّل مرتين في ملف binaa (14/09/2026)")
+    assert r.notes["A2"].startswith("⚠️ BL 38957 مسجّل مرتين: 14/09/2026")
     assert "مرتين" not in r.notes.get("A3", "") + r.notes.get("A4", "")

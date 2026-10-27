@@ -21,7 +21,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill
 from openpyxl.styles import Side as Edge
 
 from binaa_reconciler.compare.engine import Line, Result, units
-from binaa_reconciler.compare.manual import RED, YELLOW, arabic
+from binaa_reconciler.compare.manual import RED, YELLOW
+from binaa_reconciler.compare.texts import arabic
 from binaa_reconciler.core.models import LedgerSide
 
 HEAD = PatternFill("solid", fgColor="D9E1F2")

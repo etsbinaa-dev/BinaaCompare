@@ -16,6 +16,21 @@ from binaa_reconciler.compare.engine import (
 )
 from binaa_reconciler.core.models import LedgerSide
 
+ARABIC_NAMES = {"binaa": "بناء", "clinique": "كلينك", "clinic": "كلينك", "cliniq": "كلينك"}
+
+
+def arabic(name: str) -> str:
+    """The party's name in Arabic letters when known: no Latin word inside an
+    Arabic sentence, so the sentence never breaks (else the name as typed)."""
+    return ARABIC_NAMES.get(name.strip().casefold(), name)
+
+
+def arabic_text(text: str, names: tuple[str, str]) -> str:
+    """The parties' names written in Arabic letters inside a sentence."""
+    for name in names:
+        text = text.replace(name, arabic(name))
+    return text
+
 
 def title(result: Result) -> str:
     a, b = result.names
@@ -89,7 +104,7 @@ def same_amount(
     """One short conclusion under a line alone on side i: how many times this
     amount appears on each side around its date (15 days before and after),
     and whether the other side's ones are all taken by other matches."""
-    me, other = result.names[i], result.names[1 - i]
+    me, other = arabic(result.names[i]), arabic(result.names[1 - i])
     near = [line.day - timedelta(days=15), line.day + timedelta(days=15)]
 
     def around(lines: Sequence[Line], side: LedgerSide) -> list[Line]:
@@ -108,11 +123,11 @@ def same_amount(
     taken = {k for x, y in result.matched for k in (x.key, y.key)}
     taken |= {x.key for p in result.confirmed for x in p.lines}
     free = [x for x in theirs if x.key not in taken]
-    count = f"المبلغ {amount} {span}: عند {me} {len(ours)} مرة، وعند {other} {len(theirs)} مرة"
+    count = f"المبلغ {amount} {span}: {me} {len(ours)} مرة — {other} {len(theirs)} مرة"
     if not free:
-        return f"{count} — كلها مطابقة، فعند {me} عملية زائدة أو عند {other} عملية ناقصة"
+        return f"{count}\nكلها مطابقة: عملية زائدة عند {me} أو ناقصة عند {other}"
     days = "، ".join(f"{x.day:%d/%m}" for x in free[:3])
-    return f"{count} — غير المطابقة عند {other}: {days}"
+    return f"{count}\nغير المطابقة عند {other}: {days}"
 
 
 def reason(pair: Pair, names: tuple[str, str]) -> str:
@@ -144,6 +159,9 @@ def side_cells(lines: tuple[Line, ...]) -> tuple[str, str, str]:
 
 
 __all__ = [
+    "ARABIC_NAMES",
+    "arabic",
+    "arabic_text",
     "footnote",
     "headline",
     "reason",
