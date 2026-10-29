@@ -103,6 +103,27 @@ def forget(names: tuple[str, str]) -> None:
     save(names, [])
 
 
+def _history_file() -> Path:
+    return folder() / "sales_history.json"
+
+
+def sales_history() -> dict[str, Any]:
+    """The accounts' usual entries, learned from the sales reports reviewed."""
+    try:
+        data = json.loads(_history_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_sales_history(data: dict[str, Any]) -> None:
+    path = _history_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _settings() -> Path:
     return folder() / "settings.json"
 
@@ -140,5 +161,7 @@ __all__ = [
     "last_file",
     "load",
     "remember_file",
+    "sales_history",
     "save",
+    "save_sales_history",
 ]

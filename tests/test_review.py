@@ -126,3 +126,26 @@ def test_the_report_is_read_from_the_pdf(tmp_path, pipes):
     assert r.sales[2].label == "41SYN ONE f 15145 one" and r.unread == 0
     found = {f.sale.number: f.level for f in r.findings}
     assert found == {"26T00844": RED, "26T00846": GREY}
+
+
+def test_learned_usual_amounts_and_kinds_of_each_account():
+    from binaa_reconciler.compare.review import History
+
+    past = [Sale("BR", f"26A{n}", D, f"40001 SYN 60t {n}", 3_400_000) for n in range(6)]
+    history = History()
+    history.learn(past)
+    today = [
+        Sale("BR", "26A90", D, "40001 SYN 6t", 340_000),  # 100 bags for 1000?
+        Sale("FT", "26T91", D, "40001 SYN f 15001", 3_400_000),  # an invoice, not a receipt?
+        Sale("BR", "26A92", D, "40001 SYN 60t", 3_390_000),  # usual
+    ]
+    found = {f.sale.number: f.text for f in check(today, history=history).findings}
+    assert found["26A90"] == ("المبلغ أصغر بـ 10 مرات من المعتاد (3,400,000) — هل الكمية صحيحة؟")
+    assert found["26T91"] == "نوع غير معتاد لهذا الحساب: FT — عادةً BR"
+    assert "26A92" not in found
+    assert check(today).findings == [] or "26A92" not in {
+        f.sale.number for f in check(today).findings
+    }  # nothing learned yet: no judgement on 3 entries
+    again = History.from_json(history.to_json())
+    again.learn(past)  # a report reviewed twice is learned once
+    assert len(again.amounts["40001"]) == 6

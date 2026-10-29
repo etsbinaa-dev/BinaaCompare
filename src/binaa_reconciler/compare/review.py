@@ -24,6 +24,48 @@ _TYPE = re.compile(r"^[A-Z]{2,3}$")
 _INVOICE = re.compile(r"(?<![A-Za-z0-9])f\s*(\d{4,6})\b", re.IGNORECASE)
 _ACCOUNT = re.compile(r"^\d{2}[0-9A-Za-z]*$")
 SEQUENCE_JUMP = 20  # an invoice number this far from both neighbours is out of sequence
+FACTOR = 5  # an amount 5 times above or below the account's usual one: 100 bags for 1000?
+LEARNED = 5  # entries of an account needed before it is judged
+RARE = 0.1  # a kind of entry (BR / FT…) below 10 % of an account's entries is unusual
+
+
+@dataclass
+class History:
+    """What each account usually has, learned from the reports reviewed
+    before (kept on this computer): its kinds of entry and its amounts."""
+
+    kinds: dict[str, Counter[str]] = field(default_factory=dict)
+    amounts: dict[str, list[int]] = field(default_factory=dict)
+    seen: set[str] = field(default_factory=set)  # piece numbers already learned
+
+    def learn(self, sales: Iterable[Sale]) -> None:
+        for s in sales:
+            if not s.account or s.number in self.seen or not s.amount:
+                continue
+            self.seen.add(s.number)
+            self.kinds.setdefault(s.account, Counter())[s.kind] += 1
+            self.amounts.setdefault(s.account, []).append(s.amount)
+            del self.amounts[s.account][:-300]  # the recent ones only
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "kinds": {a: dict(c) for a, c in self.kinds.items()},
+            "amounts": self.amounts,
+            "seen": sorted(self.seen)[-20000:],
+        }
+
+    @staticmethod
+    def from_json(data: object) -> History:
+        h = History()
+        if not isinstance(data, dict):
+            return h
+        try:
+            h.kinds = {a: Counter(c) for a, c in data.get("kinds", {}).items()}
+            h.amounts = {a: [int(x) for x in v] for a, v in data.get("amounts", {}).items()}
+            h.seen = set(data.get("seen", []))
+        except (TypeError, ValueError, AttributeError):
+            return History()
+        return h
 
 
 @dataclass(frozen=True)
@@ -161,8 +203,10 @@ def read_pdf(path: Path) -> tuple[list[Sale], int]:
 # --------------------------------------------------------------- checks
 
 
-def check(sales: Sequence[Sale], unread: int = 0) -> Review:
+def check(sales: Sequence[Sale], unread: int = 0, history: History | None = None) -> Review:
     review = Review(list(sales), unread=unread)
+    learned = History.from_json((history or History()).to_json())  # a copy
+    learned.learn(sales)  # this report counts too (each entry without itself, below)
     notes: dict[int, list[tuple[str, str]]] = {}
 
     def note(i: int, level: str, text: str) -> None:
@@ -220,6 +264,36 @@ def check(sales: Sequence[Sale], unread: int = 0) -> Review:
             for i in group:
                 note(i, YELLOW, "نفس الحساب والمبلغ والتاريخ مرتين — هل هي مكررة؟")
 
+    for i, s in enumerate(sales):
+        if not s.account or not s.amount:
+            continue
+        kinds = learned.kinds.get(s.account, Counter())
+        total = sum(kinds.values())
+        if total - 1 >= LEARNED:
+            mine = kinds[s.kind] - (1 if s.number in learned.seen else 0)
+            if mine / (total - 1) < RARE:
+                usual = kinds.most_common(1)[0][0]
+                note(i, RED, f"نوع غير معتاد لهذا الحساب: {s.kind} — عادةً {usual}")
+        past = list(learned.amounts.get(s.account, []))
+        if s.amount in past:
+            past.remove(s.amount)
+        if len(past) >= LEARNED:
+            usual_amount = sorted(past)[len(past) // 2]
+            if s.amount >= usual_amount * FACTOR:
+                times = round(s.amount / usual_amount)
+                note(
+                    i,
+                    RED,
+                    f"المبلغ أكبر بـ {times} مرات من المعتاد ({usual_amount:,}) — هل الكمية صحيحة؟",
+                )
+            elif s.amount * FACTOR <= usual_amount:
+                times = round(usual_amount / s.amount)
+                note(
+                    i,
+                    RED,
+                    f"المبلغ أصغر بـ {times} مرات من المعتاد ({usual_amount:,}) — هل الكمية صحيحة؟",
+                )
+
     rank = {RED: 0, YELLOW: 1, GREY: 2}
     for i, items in sorted(notes.items()):
         level = min((lv for lv, _ in items), key=rank.__getitem__)
@@ -228,9 +302,9 @@ def check(sales: Sequence[Sale], unread: int = 0) -> Review:
     return review
 
 
-def review_pdf(path: Path) -> Review:
+def review_pdf(path: Path, history: History | None = None) -> Review:
     sales, unread = read_pdf(path)
-    return check(sales, unread)
+    return check(sales, unread, history)
 
 
 __all__ = [
@@ -238,6 +312,7 @@ __all__ = [
     "RED",
     "YELLOW",
     "Finding",
+    "History",
     "Review",
     "Sale",
     "check",

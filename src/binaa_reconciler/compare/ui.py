@@ -636,8 +636,9 @@ class CompareApp(tk.Tk):
             return None
         self.configure(cursor="watch")
         self.update_idletasks()
+        history = review.History.from_json(memory.sales_history())
         try:
-            result = review.review_pdf(path)
+            result = review.review_pdf(path, history)
         except Exception:
             self.dialogs.error("تعذّرت القراءة", "تأكد أنه تقرير المبيعات من RIM-Soft بصيغة PDF")
             return None
@@ -646,6 +647,9 @@ class CompareApp(tk.Tk):
         if not result.sales:
             self.dialogs.error("لا توجد فواتير", "لم يُعثر في الملف على أي فاتورة")
             return None
+        history.learn(result.sales)  # each report reviewed teaches the usual entries
+        with contextlib.suppress(OSError):
+            memory.save_sales_history(history.to_json())
         return ReviewWindow(self, path.name, result)
 
     def export_for_party(self) -> Path | None:
