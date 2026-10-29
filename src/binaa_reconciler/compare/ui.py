@@ -17,7 +17,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import ClassVar
 
-from binaa_reconciler.compare import for_party, manual, memory, review
+from binaa_reconciler.compare import for_party, manual, memory, prices, review
 from binaa_reconciler.compare.engine import (
     SIDE_AR,
     Kind,
@@ -74,6 +74,13 @@ class Dialogs:
     def ask_open_pdf(self) -> Path | None:
         name = filedialog.askopenfilename(
             title="اختر تقرير المبيعات (PDF)", filetypes=[("PDF", "*.pdf"), ("الكل", "*.*")]
+        )
+        return Path(name) if name else None
+
+    def ask_open_prices(self) -> Path | None:
+        name = filedialog.askopenfilename(
+            title="اختر ملف أسطر المبيعات",
+            filetypes=[("Excel / نص", "*.xlsx *.xlsm *.csv *.txt"), ("الكل", "*.*")],
         )
         return Path(name) if name else None
 
@@ -218,6 +225,9 @@ class CompareApp(tk.Tk):
         )
         self.party_button.pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="🔍 مراجعة المبيعات", command=self.review_sales).pack(
+            side="left", padx=(0, 6)
+        )
+        ttk.Button(actions, text="💲 مراجعة الأسعار", command=self.review_prices).pack(
             side="left", padx=(0, 6)
         )
 
@@ -652,6 +662,24 @@ class CompareApp(tk.Tk):
             memory.save_sales_history(history.to_json())
         return ReviewWindow(self, path.name, result)
 
+    def review_prices(self) -> PricesWindow | None:
+        """The product lines of a day (copied from RIM-Soft): a price far from
+        the product's usual one. The prices are learned on this computer."""
+        path = self.dialogs.ask_open_prices()
+        if path is None:
+            return None
+        history = prices.PriceHistory.from_json(memory.price_history())
+        try:
+            lines = prices.read_lines(path)
+        except Exception:
+            self.dialogs.error("تعذّرت القراءة", "يجب أن يحتوي الملف على العمودين Code و PrixVente")
+            return None
+        found = prices.check_prices(lines, history)
+        history.learn(lines)
+        with contextlib.suppress(OSError):
+            memory.save_price_history(history.to_json())
+        return PricesWindow(self, path.name, lines, found)
+
     def export_for_party(self) -> Path | None:
         """A short file for the other party: only what concerns them."""
         if self.result is None:
@@ -743,6 +771,46 @@ class ReviewWindow(tk.Toplevel):
                 f.text,
             )
             self.tree.insert("", "end", iid=str(k), values=values[::-1], tags=(f.level,))
+
+
+class PricesWindow(tk.Toplevel):
+    """The prices far from the usual ones, with their line in the file."""
+
+    def __init__(
+        self,
+        app: CompareApp,
+        name: str,
+        lines: list[prices.PriceLine],
+        found: list[prices.PriceFinding],
+    ) -> None:
+        super().__init__(app)
+        self.title(f"مراجعة الأسعار — {name}")
+        self.geometry("900x520")
+        frame = ttk.Frame(self, padding=12)
+        frame.pack(fill="both", expand=True)
+        if found:
+            head = f"{len(lines)} سطر — 🔴 {len(found)} سعر غير معتاد"
+        else:
+            head = f"✅ {len(lines)} سطر — كل الأسعار معتادة"
+        self.headline = label(frame, head, font=BIG)
+        self.headline.pack(fill="x")
+        label(
+            frame,
+            "السعر المعتاد يُتعلَّم من الملفات السابقة: كلما راجعت أكثر صار أدق",
+            foreground=GREY,
+        ).pack(fill="x", pady=(2, 6))
+        columns = ("السطر في الملف", "الرمز", "المنتج", "الكمية", "الملاحظة")
+        ids = [f"c{k}" for k in range(len(columns))]
+        self.tree = ttk.Treeview(frame, columns=ids[::-1], show="headings")
+        for k, (heading, width) in enumerate(zip(columns, (110, 80, 220, 80, 380), strict=True)):
+            self.tree.heading(f"c{k}", text=heading, anchor="e")
+            self.tree.column(f"c{k}", width=width, anchor="e", stretch=k in (2, 4))
+        self.tree.pack(fill="both", expand=True)
+        self.tree.tag_configure("red", background="#FDECEA")
+        for k, f in enumerate(found):
+            x = f.line
+            values = (str(x.row), x.code, x.name, f"{x.quantity:,.0f}", f.text)
+            self.tree.insert("", "end", iid=str(k), values=values[::-1], tags=("red",))
 
 
 def _stripe(tree: ttk.Treeview) -> tuple[str, ...]:
