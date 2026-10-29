@@ -141,6 +141,23 @@ def save_price_history(data: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def load_json(name: str) -> dict[str, Any]:
+    """A small file of what was learned (on this computer only)."""
+    try:
+        data = json.loads((folder() / name).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_json(name: str, data: dict[str, Any]) -> None:
+    path = folder() / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _settings() -> Path:
     return folder() / "settings.json"
 
@@ -177,10 +194,12 @@ __all__ = [
     "forget",
     "last_file",
     "load",
+    "load_json",
     "price_history",
     "remember_file",
     "sales_history",
     "save",
+    "save_json",
     "save_price_history",
     "save_sales_history",
 ]

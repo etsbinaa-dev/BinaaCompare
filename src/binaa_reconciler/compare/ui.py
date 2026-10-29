@@ -11,13 +11,14 @@ import contextlib
 import os
 import sys
 import tkinter as tk
+from collections.abc import Sequence
 from datetime import date, datetime
 from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import ClassVar
 
-from binaa_reconciler.compare import for_party, manual, memory, prices, review
+from binaa_reconciler.compare import for_party, journal, manual, memory, prices, review
 from binaa_reconciler.compare.engine import (
     SIDE_AR,
     Kind,
@@ -228,6 +229,9 @@ class CompareApp(tk.Tk):
             side="left", padx=(0, 6)
         )
         ttk.Button(actions, text="💲 مراجعة الأسعار", command=self.review_prices).pack(
+            side="left", padx=(0, 6)
+        )
+        ttk.Button(actions, text="📒 مراجعة القيود", command=self.review_journal).pack(
             side="left", padx=(0, 6)
         )
 
@@ -680,6 +684,49 @@ class CompareApp(tk.Tk):
             memory.save_price_history(history.to_json())
         return PricesWindow(self, path.name, lines, found)
 
+    def review_journal(self) -> FindingsWindow | None:
+        """A day's journal entries (Copier écritures, all accounts): unbalanced
+        pieces, repeated entries, unusual amounts or sides (learned here)."""
+        path = self.dialogs.ask_open_prices()
+        if path is None:
+            return None
+        history = journal.JournalHistory.from_json(memory.load_json("journal.json"))
+        try:
+            entries = journal.read_entries(path)
+        except Exception:
+            self.dialogs.error(
+                "تعذّرت القراءة", "يجب أن يحتوي الملف على الأعمدة Compte و NoPiece و Débit و Crédit"
+            )
+            return None
+        found = journal.check_entries(entries, history)
+        history.learn(entries)
+        with contextlib.suppress(OSError):
+            memory.save_json("journal.json", history.to_json())
+        red = sum(f.level == journal.RED for f in found)
+        yellow = len(found) - red
+        if found:
+            head = f"{len(entries)} قيد — 🔴 {red} خطأ محتمل — 🟡 {yellow} للتحقق"
+        else:
+            head = f"✅ {len(entries)} قيد — لا شيء مشبوه"
+        rows = [
+            (
+                f.level,
+                (
+                    str(f.entry.row),
+                    f.entry.piece,
+                    f.entry.account,
+                    f.entry.label,
+                    f"{f.entry.debit:,.0f}" if f.entry.debit else "",
+                    f"{f.entry.credit:,.0f}" if f.entry.credit else "",
+                    f.text,
+                ),
+            )
+            for f in found
+        ]
+        columns = ("السطر", "القطعة", "الحساب", "البيان", "مدين", "دائن", "الملاحظة")
+        widths = (60, 100, 90, 170, 100, 100, 380)
+        return FindingsWindow(self, f"مراجعة القيود — {path.name}", head, columns, widths, rows)
+
     def export_for_party(self) -> Path | None:
         """A short file for the other party: only what concerns them."""
         if self.result is None:
@@ -811,6 +858,42 @@ class PricesWindow(tk.Toplevel):
             x = f.line
             values = (str(x.row), x.code, x.name, f"{x.quantity:,.0f}", f.text)
             self.tree.insert("", "end", iid=str(k), values=values[::-1], tags=("red",))
+
+
+class FindingsWindow(tk.Toplevel):
+    """A list of findings, the most serious first, coloured by level."""
+
+    def __init__(
+        self,
+        app: CompareApp,
+        title_text: str,
+        head: str,
+        columns: tuple[str, ...],
+        widths: tuple[int, ...],
+        rows: Sequence[tuple[str, tuple[str, ...]]],
+    ) -> None:
+        super().__init__(app)
+        self.title(title_text)
+        self.geometry("1150x560")
+        frame = ttk.Frame(self, padding=12)
+        frame.pack(fill="both", expand=True)
+        self.headline = label(frame, head, font=BIG)
+        self.headline.pack(fill="x")
+        label(
+            frame,
+            "المعتاد لكل حساب يُتعلَّم من الأيام السابقة: كلما راجعت أكثر صار أدق",
+            foreground=GREY,
+        ).pack(fill="x", pady=(2, 6))
+        ids = [f"c{k}" for k in range(len(columns))]
+        self.tree = ttk.Treeview(frame, columns=ids[::-1], show="headings")
+        for k, (heading, width) in enumerate(zip(columns, widths, strict=True)):
+            self.tree.heading(f"c{k}", text=heading, anchor="e")
+            self.tree.column(f"c{k}", width=width, anchor="e", stretch=k == len(columns) - 1)
+        self.tree.pack(fill="both", expand=True)
+        self.tree.tag_configure("red", background="#FDECEA")
+        self.tree.tag_configure("yellow", background="#FFF8E1")
+        for k, (level, values) in enumerate(rows):
+            self.tree.insert("", "end", iid=str(k), values=values[::-1], tags=(level,))
 
 
 def _stripe(tree: ttk.Treeview) -> tuple[str, ...]:

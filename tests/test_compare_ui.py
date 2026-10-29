@@ -27,6 +27,7 @@ class FakeDialogs:
     def __init__(self, files, save_to):
         self.files, self.save_to, self.calls = list(files), save_to, []
         self.pdf = None
+        self.prices = None
 
     def ask_open(self, last=None):
         self.last = last
@@ -43,6 +44,9 @@ class FakeDialogs:
 
     def ask_open_pdf(self):
         return self.pdf
+
+    def ask_open_prices(self):
+        return self.prices
 
     def open_file(self, path):
         self.calls.append(("open", path.name))
@@ -287,5 +291,26 @@ def test_the_sales_review_window(tmp_path):
         app.dialogs.pdf = tmp_path / "not-a-pdf.pdf"
         app.dialogs.pdf.write_bytes(b"nothing")
         assert app.review_sales() is None and app.dialogs.calls[-1] == ("error", "تعذّرت القراءة")
+    finally:
+        app.destroy()
+
+
+def test_the_journal_review_window(tmp_path):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["NoOrdre", "Date", "Compte", "Libellé", "NoPiece", "Débit", "Crédit"])
+    ws.append(["1", "29/09/2026", "41SYN", "SYN", "26OD1", 500, 0])
+    ws.append(["2", "29/09/2026", "55SYN", "SYN", "26OD1", 0, 450])
+    wb.save(tmp_path / "j.xlsx")
+    try:
+        app = CompareApp(FakeDialogs([], tmp_path / "out.xlsx"))
+    except Exception as exc:  # no display
+        pytest.skip(f"Tk cannot open a window here: {type(exc).__name__}")
+    try:
+        app.dialogs.prices = tmp_path / "j.xlsx"
+        window = app.review_journal()
+        assert window is not None and "🔴 2 خطأ محتمل" in window.headline.cget("text")
     finally:
         app.destroy()
