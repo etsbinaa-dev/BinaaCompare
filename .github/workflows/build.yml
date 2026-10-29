@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: python -m pip install . pytest "pyinstaller>=6,<7"
+        run: python -m pip install . pytest reportlab "pyinstaller>=6,<7"
       - name: Tests
         run: python -m pytest -p no:cacheprovider -q
       - name: Build BinaaCompare.exe
@@ -26,7 +26,7 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx `
             --distpath dist --workpath build\pyinstaller --specpath build\spec `
             --exclude-module pytest --exclude-module setuptools --exclude-module pip `
-            --collect-data sv_ttk `
+            --collect-data sv_ttk --collect-data pdfminer `
             --name BinaaCompare packaging\windows\compare_entry.py
           if ($LASTEXITCODE) { throw "PyInstaller failed" }
           $stage = "dist\BinaaCompare-Windows"

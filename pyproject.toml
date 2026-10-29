@@ -9,10 +9,10 @@ description = "Compare two RIM-Soft account statements. Offline and local only."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-dependencies = ["openpyxl>=3.1,<4", "sv-ttk>=2.6,<3"]
+dependencies = ["openpyxl>=3.1,<4", "sv-ttk>=2.6,<3", "pdfminer.six>=20231228"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "mypy>=1.10", "ruff>=0.5", "types-openpyxl>=3.1"]
+dev = ["pytest>=8", "mypy>=1.10", "ruff>=0.5", "types-openpyxl>=3.1", "reportlab>=4"]
 
 [project.gui-scripts]
 binaa-compare = "binaa_reconciler.compare.ui:main"

@@ -15,8 +15,9 @@ from datetime import date, datetime
 from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from typing import ClassVar
 
-from binaa_reconciler.compare import for_party, manual, memory
+from binaa_reconciler.compare import for_party, manual, memory, review
 from binaa_reconciler.compare.engine import (
     SIDE_AR,
     Kind,
@@ -67,6 +68,12 @@ class Dialogs:
             filetypes=[("Excel", "*.xlsx *.xlsm"), ("الكل", "*.*")],
             initialdir=str(last.parent) if last else None,
             initialfile=last.name if last else None,
+        )
+        return Path(name) if name else None
+
+    def ask_open_pdf(self) -> Path | None:
+        name = filedialog.askopenfilename(
+            title="اختر تقرير المبيعات (PDF)", filetypes=[("PDF", "*.pdf"), ("الكل", "*.*")]
         )
         return Path(name) if name else None
 
@@ -210,6 +217,9 @@ class CompareApp(tk.Tk):
             actions, text="ملف مشترك للمكالمة", command=self.export_for_party
         )
         self.party_button.pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="🔍 مراجعة المبيعات", command=self.review_sales).pack(
+            side="left", padx=(0, 6)
+        )
 
         self.headline_var = tk.StringVar()  # the same counts in one sentence (window title)
         self.note_var = tk.StringVar()
@@ -618,6 +628,26 @@ class CompareApp(tk.Tk):
     def _tab_trees(self) -> list[ttk.Treeview]:
         return [self.pair_trees["possible"], self.pair_trees["close"], *self.trees]
 
+    def review_sales(self) -> ReviewWindow | None:
+        """The day's sales report (PDF from RIM-Soft): what looks like an entry
+        error, the most serious first. Works without the two files."""
+        path = self.dialogs.ask_open_pdf()
+        if path is None:
+            return None
+        self.configure(cursor="watch")
+        self.update_idletasks()
+        try:
+            result = review.review_pdf(path)
+        except Exception:
+            self.dialogs.error("تعذّرت القراءة", "تأكد أنه تقرير المبيعات من RIM-Soft بصيغة PDF")
+            return None
+        finally:
+            self.configure(cursor="")
+        if not result.sales:
+            self.dialogs.error("لا توجد فواتير", "لم يُعثر في الملف على أي فاتورة")
+            return None
+        return ReviewWindow(self, path.name, result)
+
     def export_for_party(self) -> Path | None:
         """A short file for the other party: only what concerns them."""
         if self.result is None:
@@ -650,6 +680,65 @@ class CompareApp(tk.Tk):
             return None
         self.dialogs.open_file(target)
         return target
+
+
+class ReviewWindow(tk.Toplevel):
+    """The checks of one sales report: one line per suspicious entry."""
+
+    COLORS: ClassVar[dict[str, tuple[str, str]]] = {
+        review.RED: ("#FDECEA", "🔴"),
+        review.YELLOW: ("#FFF8E1", "🟡"),
+        review.GREY: ("#F0F0F0", "⚪"),
+    }
+
+    def __init__(self, app: CompareApp, name: str, result: review.Review) -> None:
+        super().__init__(app)
+        self.title(f"مراجعة المبيعات — {name}")
+        self.geometry("1100x620")
+        self.result = result
+        frame = ttk.Frame(self, padding=12)
+        frame.pack(fill="both", expand=True)
+        days = sorted({s.day for s in result.sales})
+        span = f"{days[0]:%d/%m/%Y}" + (f" → {days[-1]:%d/%m/%Y}" if len(days) > 1 else "")
+        red, yellow = result.count(review.RED), result.count(review.YELLOW)
+        if not red and not yellow:
+            head = f"✅ {len(result.sales)} فاتورة ({span}) — لا شيء مشبوه"
+        else:
+            head = f"{len(result.sales)} فاتورة ({span}) — 🔴 {red} خطأ محتمل — 🟡 {yellow} للتحقق"
+        self.headline = label(frame, head, font=BIG)
+        self.headline.pack(fill="x")
+        extra = []
+        if result.missing:
+            numbers = "، ".join(f"f {n}" for n in result.missing[:15])
+            extra.append(f"⚠️ أرقام فواتير غير موجودة في التقرير: {numbers}")
+        if result.unread:
+            extra.append(f"⚠️ {result.unread} سطر لم يُقرأ")
+        self.extra = label(frame, "\n".join(extra), foreground=RED, wraplength=1050)
+        self.extra.pack(fill="x", pady=(4, 6))
+        columns = ("الرقم", "التاريخ", "البيان", "المبلغ", "الملاحظة")
+        ids = [f"c{k}" for k in range(len(columns))]
+        holder = ttk.Frame(frame)
+        holder.pack(fill="both", expand=True)
+        self.tree = ttk.Treeview(holder, columns=ids[::-1], show="headings")
+        for k, (heading, width) in enumerate(zip(columns, (100, 95, 330, 110, 430), strict=True)):
+            self.tree.heading(f"c{k}", text=heading, anchor="e")
+            self.tree.column(f"c{k}", width=width, anchor="e", stretch=k in (2, 4))
+        bar = ttk.Scrollbar(holder, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=bar.set)
+        bar.pack(side="left", fill="y")
+        self.tree.pack(side="right", fill="both", expand=True)
+        for level, (bg, _) in self.COLORS.items():
+            self.tree.tag_configure(level, background=bg)
+        for k, f in enumerate(result.findings):
+            s = f.sale
+            values = (
+                f"{self.COLORS[f.level][1]} {s.number}",
+                f"{s.day:%d/%m/%Y}",
+                s.label,
+                amount_text(s.amount * 100) if s.amount else "—",
+                f.text,
+            )
+            self.tree.insert("", "end", iid=str(k), values=values[::-1], tags=(f.level,))
 
 
 def _stripe(tree: ttk.Treeview) -> tuple[str, ...]:

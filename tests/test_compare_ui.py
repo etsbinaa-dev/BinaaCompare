@@ -26,6 +26,7 @@ def xlsx(path, rows):
 class FakeDialogs:
     def __init__(self, files, save_to):
         self.files, self.save_to, self.calls = list(files), save_to, []
+        self.pdf = None
 
     def ask_open(self, last=None):
         self.last = last
@@ -39,6 +40,9 @@ class FakeDialogs:
 
     def error(self, title, text):
         self.calls.append(("error", title))
+
+    def ask_open_pdf(self):
+        return self.pdf
 
     def open_file(self, path):
         self.calls.append(("open", path.name))
@@ -262,5 +266,26 @@ def test_a_line_corrected_in_rimsoft_is_settled_by_hand(files, tmp_path):
         assert "✔️ تمت تسويتها: 1" in app.headline_var.get()
         app.undo()
         assert tree.get_children() == (key,)
+    finally:
+        app.destroy()
+
+
+def test_the_sales_review_window(tmp_path):
+    from test_review import _pdf
+
+    try:
+        app = CompareApp(FakeDialogs([], tmp_path / "out.xlsx"))
+    except Exception as exc:  # no display
+        pytest.skip(f"Tk cannot open a window here: {type(exc).__name__}")
+    try:
+        app.dialogs.pdf = _pdf(tmp_path / "ventes.pdf", pipes=True)
+        window = app.review_sales()
+        assert window is not None
+        assert "🔴 1 خطأ محتمل" in window.headline.cget("text")
+        rows = [window.tree.item(k, "values")[::-1] for k in window.tree.get_children()]
+        assert rows[0][0] == "🔴 26T00844" and "خارج التسلسل" in rows[0][4]
+        app.dialogs.pdf = tmp_path / "not-a-pdf.pdf"
+        app.dialogs.pdf.write_bytes(b"nothing")
+        assert app.review_sales() is None and app.dialogs.calls[-1] == ("error", "تعذّرت القراءة")
     finally:
         app.destroy()
